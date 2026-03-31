@@ -1,0 +1,257 @@
+import { router } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { useDeferredValue, useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { ActivityFilterChip } from '@/components/home/activity-filter-chip';
+import { EventCard } from '@/components/home/event-card';
+import { HomeHeader } from '@/components/home/home-header';
+import { activityFilters, featuredEvents } from '@/components/home/mock-data';
+import { AddActivityCard, MyActivityCard } from '@/components/home/my-activity-card';
+import { SearchBar } from '@/components/home/search-bar';
+import { ThemedText } from '@/components/themed-text';
+import { useActivityStore } from '@/store/activity-store';
+
+export default function HomeScreen() {
+  const { createdActivities } = useActivityStore();
+  const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const normalizedQuery = deferredSearchQuery.trim().toLowerCase();
+  const hasActiveSearch = normalizedQuery.length > 0;
+  const filteredCreatedActivities = createdActivities.filter((activity) =>
+    matchesSearchQuery(normalizedQuery, [
+      activity.title,
+      activity.type,
+      activity.location,
+      activity.description,
+    ])
+  );
+  const filteredFeaturedEvents = featuredEvents.filter((event) =>
+    matchesSearchQuery(normalizedQuery, [
+      event.title,
+      event.activityType,
+      event.location,
+      event.description,
+    ])
+  );
+  const hasResults = filteredCreatedActivities.length > 0 || filteredFeaturedEvents.length > 0;
+
+  return (
+    <View style={styles.screen}>
+      <StatusBar style="dark" />
+      <View style={styles.background}>
+        <View style={styles.glowTop} />
+        <View style={styles.glowBottom} />
+      </View>
+      <SafeAreaView edges={['top']} style={styles.safeArea}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          bounces={false}>
+          <HomeHeader greeting="Good morning," userName="Maya" location="Kadikoy, Istanbul" />
+
+          <SearchBar
+            onChangeText={setSearchQuery}
+            onClear={() => setSearchQuery('')}
+            placeholder="Find coffee chats, runs, and hangouts"
+            value={searchQuery}
+          />
+
+          {filteredCreatedActivities.length > 0 ? (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <ThemedText style={styles.sectionTitle}>My Activities</ThemedText>
+                <ThemedText style={styles.sectionAction}>
+                  {filteredCreatedActivities.length} active
+                </ThemedText>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.myActivitiesRow}>
+                {filteredCreatedActivities.map((activity) => (
+                  <MyActivityCard
+                    key={activity.id}
+                    activity={activity}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/activity/[id]',
+                        params: { id: activity.id },
+                      })
+                    }
+                  />
+                ))}
+                <AddActivityCard onPress={() => router.push('/create')} />
+              </ScrollView>
+            </View>
+          ) : null}
+
+          {!hasActiveSearch ? (
+            <View style={styles.section}>
+              <ThemedText style={styles.sectionTitle}>Browse activities</ThemedText>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.chipsRow}>
+                {activityFilters.map((filter, index) => (
+                  <ActivityFilterChip
+                    key={filter.id}
+                    label={filter.label}
+                    icon={filter.icon}
+                    isActive={index === 0}
+                  />
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
+
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <ThemedText style={styles.sectionTitle}>
+                {hasActiveSearch ? 'Search Results' : 'Happening nearby'}
+              </ThemedText>
+              <ThemedText style={styles.sectionAction}>
+                {hasActiveSearch ? `${filteredFeaturedEvents.length} matches` : 'See all'}
+              </ThemedText>
+            </View>
+            {hasResults ? (
+              <View style={styles.cardsColumn}>
+                {filteredFeaturedEvents.length > 0 ? (
+                  filteredFeaturedEvents.map((event) => (
+                    <EventCard
+                      key={event.id}
+                      event={event}
+                      onPress={() =>
+                        router.push({
+                          pathname: '/event/[id]',
+                          params: { id: event.id },
+                        })
+                      }
+                    />
+                  ))
+                ) : hasActiveSearch ? (
+                  <View style={styles.emptyStateCard}>
+                    <ThemedText style={styles.emptyStateTitle}>No discovery matches</ThemedText>
+                    <ThemedText style={styles.emptyStateBody}>
+                      Try a broader keyword to find nearby activities.
+                    </ThemedText>
+                  </View>
+                ) : null}
+              </View>
+            ) : (
+              <View style={styles.cardsColumn}>
+                <View style={styles.emptyStateCard}>
+                  <ThemedText style={styles.emptyStateTitle}>No activities found</ThemedText>
+                  <ThemedText style={styles.emptyStateBody}>
+                    Try a different keyword.
+                  </ThemedText>
+                </View>
+              </View>
+            )}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#FFF8F0',
+  },
+  background: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#FFF8F0',
+    overflow: 'hidden',
+  },
+  glowTop: {
+    position: 'absolute',
+    top: -120,
+    right: -40,
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    backgroundColor: '#F1DFC3',
+    opacity: 0.8,
+  },
+  glowBottom: {
+    position: 'absolute',
+    bottom: 120,
+    left: -80,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: '#F4E7D8',
+    opacity: 0.9,
+  },
+  safeArea: {
+    flex: 1,
+  },
+  content: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 120,
+    gap: 28,
+  },
+  section: {
+    gap: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sectionTitle: {
+    color: '#171411',
+    fontSize: 20,
+    lineHeight: 24,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+  sectionAction: {
+    color: '#7C7468',
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  chipsRow: {
+    gap: 10,
+    paddingRight: 20,
+  },
+  myActivitiesRow: {
+    gap: 12,
+    paddingRight: 20,
+  },
+  cardsColumn: {
+    gap: 16,
+  },
+  emptyStateCard: {
+    gap: 10,
+    padding: 22,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255, 253, 249, 0.92)',
+    borderWidth: 1,
+    borderColor: '#EFE4D6',
+  },
+  emptyStateTitle: {
+    color: '#171411',
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: '700',
+  },
+  emptyStateBody: {
+    color: '#6A6258',
+    fontSize: 15,
+    lineHeight: 21,
+  },
+});
+
+function matchesSearchQuery(query: string, fields: (string | undefined)[]) {
+  if (!query) {
+    return true;
+  }
+
+  return fields.some((field) => field?.toLowerCase().includes(query));
+}
