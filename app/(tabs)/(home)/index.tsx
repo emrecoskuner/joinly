@@ -16,6 +16,7 @@ import { useActivityStore } from '@/store/activity-store';
 export default function HomeScreen() {
   const { createdActivities } = useActivityStore();
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const normalizedQuery = deferredSearchQuery.trim().toLowerCase();
   const hasActiveSearch = normalizedQuery.length > 0;
@@ -28,9 +29,11 @@ export default function HomeScreen() {
     ])
   );
   const filteredFeaturedEvents = featuredEvents.filter((event) =>
+    matchesCategory(event.category, selectedCategory) &&
     matchesSearchQuery(normalizedQuery, [
       event.title,
       event.activityType,
+      event.category,
       event.location,
       event.description,
     ])
@@ -87,32 +90,35 @@ export default function HomeScreen() {
             </View>
           ) : null}
 
-          {!hasActiveSearch ? (
-            <View style={styles.section}>
-              <ThemedText style={styles.sectionTitle}>Browse activities</ThemedText>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.chipsRow}>
-                {activityFilters.map((filter, index) => (
-                  <ActivityFilterChip
-                    key={filter.id}
-                    label={filter.label}
-                    icon={filter.icon}
-                    isActive={index === 0}
-                  />
-                ))}
-              </ScrollView>
-            </View>
-          ) : null}
+          <View style={styles.section}>
+            <ThemedText style={styles.sectionTitle}>Browse activities</ThemedText>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipsRow}>
+              {activityFilters.map((filter) => (
+                <ActivityFilterChip
+                  key={filter.id}
+                  label={filter.label}
+                  icon={filter.icon}
+                  isActive={selectedCategory === filter.label}
+                  onPress={() =>
+                    setSelectedCategory((currentValue) =>
+                      currentValue === filter.label ? null : filter.label
+                    )
+                  }
+                />
+              ))}
+            </ScrollView>
+          </View>
 
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <ThemedText style={styles.sectionTitle}>
-                {hasActiveSearch ? 'Search Results' : 'Happening nearby'}
+                {hasActiveSearch || selectedCategory ? 'Filtered Activities' : 'Happening nearby'}
               </ThemedText>
               <ThemedText style={styles.sectionAction}>
-                {hasActiveSearch ? `${filteredFeaturedEvents.length} matches` : 'See all'}
+                {hasActiveSearch || selectedCategory ? `${filteredFeaturedEvents.length} matches` : 'See all'}
               </ThemedText>
             </View>
             {hasResults ? (
@@ -130,11 +136,13 @@ export default function HomeScreen() {
                       }
                     />
                   ))
-                ) : hasActiveSearch ? (
+                ) : hasActiveSearch || selectedCategory ? (
                   <View style={styles.emptyStateCard}>
-                    <ThemedText style={styles.emptyStateTitle}>No discovery matches</ThemedText>
+                    <ThemedText style={styles.emptyStateTitle}>
+                      {getEmptyStateTitle(selectedCategory, hasActiveSearch)}
+                    </ThemedText>
                     <ThemedText style={styles.emptyStateBody}>
-                      Try a broader keyword to find nearby activities.
+                      {getEmptyStateBody(selectedCategory, hasActiveSearch)}
                     </ThemedText>
                   </View>
                 ) : null}
@@ -142,9 +150,11 @@ export default function HomeScreen() {
             ) : (
               <View style={styles.cardsColumn}>
                 <View style={styles.emptyStateCard}>
-                  <ThemedText style={styles.emptyStateTitle}>No activities found</ThemedText>
+                  <ThemedText style={styles.emptyStateTitle}>
+                    {getEmptyStateTitle(selectedCategory, hasActiveSearch)}
+                  </ThemedText>
                   <ThemedText style={styles.emptyStateBody}>
-                    Try a different keyword.
+                    {getEmptyStateBody(selectedCategory, hasActiveSearch)}
                   </ThemedText>
                 </View>
               </View>
@@ -254,4 +264,44 @@ function matchesSearchQuery(query: string, fields: (string | undefined)[]) {
   }
 
   return fields.some((field) => field?.toLowerCase().includes(query));
+}
+
+function matchesCategory(category: string, selectedCategory: string | null) {
+  if (!selectedCategory) {
+    return true;
+  }
+
+  return category === selectedCategory;
+}
+
+function getEmptyStateTitle(selectedCategory: string | null, hasActiveSearch: boolean) {
+  if (selectedCategory && hasActiveSearch) {
+    return 'No activities match this search';
+  }
+
+  if (selectedCategory) {
+    return 'No activities found for this category';
+  }
+
+  if (hasActiveSearch) {
+    return 'No activities found';
+  }
+
+  return 'No activities found';
+}
+
+function getEmptyStateBody(selectedCategory: string | null, hasActiveSearch: boolean) {
+  if (selectedCategory && hasActiveSearch) {
+    return `Try a different keyword or switch from ${selectedCategory} to another category.`;
+  }
+
+  if (selectedCategory) {
+    return `There are no ${selectedCategory} activities available right now.`;
+  }
+
+  if (hasActiveSearch) {
+    return 'Try a different keyword.';
+  }
+
+  return 'Try a different keyword.';
 }

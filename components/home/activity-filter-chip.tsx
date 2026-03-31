@@ -8,15 +8,24 @@ type ActivityFilterChipProps = {
   label: string;
   icon: string;
   isActive?: boolean;
+  onPress?: () => void;
 };
 
 export function ActivityFilterChip({
   label,
   icon,
   isActive = false,
+  onPress,
 }: ActivityFilterChipProps) {
   return (
-    <Pressable style={[styles.chip, isActive ? styles.chipActive : styles.chipInactive]}>
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.chip,
+        isActive ? styles.chipActive : styles.chipInactive,
+        pressed ? styles.chipPressed : null,
+      ]}>
       <MaterialIcons
         name={icon as ComponentProps<typeof MaterialIcons>['name']}
         size={18}
@@ -43,6 +52,9 @@ const styles = StyleSheet.create({
   },
   chipInactive: {
     backgroundColor: '#F5EEE4',
+  },
+  chipPressed: {
+    opacity: 0.92,
   },
   label: {
     fontSize: 14,
