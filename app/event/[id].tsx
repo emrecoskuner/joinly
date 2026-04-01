@@ -2,24 +2,41 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useState } from 'react';
 
 import { getActivityCategoryByLabel } from '@/constants/activity-categories';
 import { getFeaturedEventById } from '@/components/home/mock-data';
 import { ThemedText } from '@/components/themed-text';
 import {
   canAccessActivityChat,
+  isActivityEnded,
   isActivityPast,
   resolveEventParticipationStatus,
+  syncEventParticipationForCurrentUser,
   useActivityStore,
   type ParticipationStatus,
 } from '@/store/activity-store';
 
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const event = id ? getFeaturedEventById(id) : undefined;
-  const { participationByEventId, joinEvent, requestToJoinEvent } = useActivityStore();
+  const rawEvent = id ? getFeaturedEventById(id) : undefined;
+  const {
+    endedActivitiesById,
+    endActivity,
+    participationByEventId,
+    joinEvent,
+    requestToJoinEvent,
+    leaveActivity,
+  } = useActivityStore();
+  const [confirmAction, setConfirmAction] = useState<'leave' | 'end' | null>(null);
+  const endedEvent = id ? endedActivitiesById[id] : undefined;
+  const event = endedEvent
+    ? endedEvent
+    : rawEvent
+      ? syncEventParticipationForCurrentUser(rawEvent, participationByEventId)
+      : undefined;
 
   if (!event) {
     return (
@@ -38,11 +55,19 @@ export default function EventDetailScreen() {
   }
 
   const category = getActivityCategoryByLabel(event.category);
+  const accentColor = category.color;
   const isPrivateActivity = event.privacyType !== 'Public';
-  const participationStatus = resolveEventParticipationStatus(event, participationByEventId);
+  const isEnded = isActivityEnded(event.id, endedActivitiesById);
+  const participationStatus = isEnded ? 'none' : resolveEventParticipationStatus(event, participationByEventId);
   const statusCopy = getParticipationStateCopy(participationStatus);
-  const hasChatAccess = canAccessActivityChat(participationStatus);
-  const hasEnded = isActivityPast(event.dateTimeIso);
+  const hasChatAccess = !isEnded && canAccessActivityChat(participationStatus);
+  const hasEnded = isEnded || isActivityPast(event.dateTimeIso);
+  const canLeave = participationStatus === 'joined' && !hasEnded;
+  const canEndActivity = !isEnded && participationStatus === 'hosting';
+
+  const handleLeave = () => {
+    setConfirmAction('leave');
+  };
 
   return (
     <View style={styles.screen}>
@@ -52,11 +77,61 @@ export default function EventDetailScreen() {
         <View style={styles.glowBottom} />
       </View>
 
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setConfirmAction(null)}
+        transparent
+        visible={confirmAction !== null}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setConfirmAction(null)} />
+          <View style={styles.modalCard}>
+            <ThemedText style={styles.modalTitle}>
+              {confirmAction === 'end' ? 'End activity?' : 'Leave activity?'}
+            </ThemedText>
+            <ThemedText style={styles.modalBody}>
+              {confirmAction === 'end'
+                ? 'This will cancel the activity for everyone and remove all participants.'
+                : 'You will be removed from this activity.'}
+            </ThemedText>
+            <View style={styles.modalActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setConfirmAction(null)}
+                style={({ pressed }) => [
+                  styles.modalSecondaryAction,
+                  pressed ? styles.buttonPressed : null,
+                ]}>
+                <ThemedText style={styles.modalSecondaryActionText}>Cancel</ThemedText>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  const nextAction = confirmAction;
+                  setConfirmAction(null);
+                  if (nextAction === 'end') {
+                    endActivity(event);
+                    return;
+                  }
+                  leaveActivity(event.id);
+                }}
+                style={({ pressed }) => [
+                  styles.modalDangerAction,
+                  pressed ? styles.buttonPressed : null,
+                ]}>
+                <ThemedText style={styles.modalDangerActionText}>
+                  {confirmAction === 'end' ? 'End Activity' : 'Leave'}
+                </ThemedText>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.heroCard}>
             <View style={styles.heroHeader}>
-              <View style={[styles.categoryPill, { backgroundColor: event.accentColor }]}>
+              <View style={[styles.categoryPill, { backgroundColor: accentColor }]}>
                 {category ? (
                   <MaterialIcons color="#FFFDFC" name={category.icon} size={14} />
                 ) : null}
@@ -85,7 +160,14 @@ export default function EventDetailScreen() {
               </View>
             ) : null}
 
-            {participationStatus === 'none' ? (
+            {isEnded ? (
+              <View style={styles.statusCard}>
+                <ThemedText style={styles.statusCardLabel}>Activity Ended</ThemedText>
+                <ThemedText style={styles.statusCardText}>
+                  This activity has been cancelled and is no longer active.
+                </ThemedText>
+              </View>
+            ) : participationStatus === 'none' ? (
               <Pressable
                 accessibilityRole="button"
                 onPress={() =>
@@ -176,8 +258,8 @@ export default function EventDetailScreen() {
                     })
                   }
                   style={({ pressed }) => [styles.participantRow, pressed ? styles.cardPressed : null]}>
-                  <View style={[styles.participantAvatar, { backgroundColor: `${event.accentColor}1C` }]}>
-                    <ThemedText style={[styles.participantAvatarText, { color: event.accentColor }]}>
+                  <View style={[styles.participantAvatar, { backgroundColor: `${accentColor}1C` }]}>
+                    <ThemedText style={[styles.participantAvatarText, { color: accentColor }]}>
                       {participant.initials}
                     </ThemedText>
                   </View>
@@ -194,6 +276,32 @@ export default function EventDetailScreen() {
               ))}
             </View>
           </View>
+
+          {canLeave ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={handleLeave}
+              style={({ pressed }) => [
+                styles.leaveButton,
+                pressed ? styles.buttonPressed : null,
+              ]}>
+              <MaterialIcons color="#B14F46" name="logout" size={18} />
+              <ThemedText style={styles.leaveButtonText}>Leave</ThemedText>
+            </Pressable>
+          ) : null}
+
+          {canEndActivity ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setConfirmAction('end')}
+              style={({ pressed }) => [
+                styles.leaveButton,
+                pressed ? styles.buttonPressed : null,
+              ]}>
+              <MaterialIcons color="#B14F46" name="event-busy" size={18} />
+              <ThemedText style={styles.leaveButtonText}>End Activity</ThemedText>
+            </Pressable>
+          ) : null}
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -256,6 +364,67 @@ const styles = StyleSheet.create({
   background: {
     ...StyleSheet.absoluteFillObject,
     overflow: 'hidden',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    backgroundColor: 'rgba(21, 17, 13, 0.22)',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  modalCard: {
+    gap: 14,
+    padding: 22,
+    borderRadius: 28,
+    backgroundColor: '#FFFDFC',
+    borderWidth: 1,
+    borderColor: '#EFE4D6',
+  },
+  modalTitle: {
+    color: '#171411',
+    fontSize: 20,
+    lineHeight: 24,
+    fontWeight: '700',
+  },
+  modalBody: {
+    color: '#665D53',
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 4,
+  },
+  modalSecondaryAction: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F5EEE4',
+  },
+  modalSecondaryActionText: {
+    color: '#5E584F',
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '800',
+  },
+  modalDangerAction: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#B14F46',
+  },
+  modalDangerActionText: {
+    color: '#FFFDFC',
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '800',
   },
   glowTop: {
     position: 'absolute',
@@ -460,6 +629,24 @@ const styles = StyleSheet.create({
     color: '#6A6258',
     fontSize: 13,
     lineHeight: 18,
+  },
+  leaveButton: {
+    alignSelf: 'stretch',
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 20,
+    backgroundColor: '#FBEDEA',
+    borderWidth: 1,
+    borderColor: '#F1CDC8',
+  },
+  leaveButtonText: {
+    color: '#B14F46',
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '800',
   },
   buttonPressed: {
     opacity: 0.92,

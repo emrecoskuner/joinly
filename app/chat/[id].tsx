@@ -18,9 +18,11 @@ import { getFeaturedEventById } from '@/components/home/mock-data';
 import { ThemedText } from '@/components/themed-text';
 import {
   canAccessActivityChat,
+  isActivityEnded,
   isActivityPast,
   mapActivityToEventItem,
   resolveEventParticipationStatus,
+  syncEventParticipationForCurrentUser,
   useActivityStore,
 } from '@/store/activity-store';
 
@@ -29,6 +31,7 @@ export default function ActivityChatScreen() {
   const {
     createdActivities,
     currentUserId,
+    endedActivitiesById,
     messagesByActivityId,
     participationByEventId,
     sendMessage,
@@ -41,6 +44,12 @@ export default function ActivityChatScreen() {
       return undefined;
     }
 
+    const endedActivity = endedActivitiesById[id];
+
+    if (endedActivity) {
+      return endedActivity;
+    }
+
     const createdActivity = createdActivities.find((item) => item.id === id);
 
     if (createdActivity) {
@@ -48,13 +57,18 @@ export default function ActivityChatScreen() {
     }
 
     return getFeaturedEventById(id);
-  }, [createdActivities, id]);
+  }, [createdActivities, endedActivitiesById, id]);
+  const syncedActivity = activity
+    ? syncEventParticipationForCurrentUser(activity, participationByEventId)
+    : undefined;
+  const isEnded = syncedActivity ? isActivityEnded(syncedActivity.id, endedActivitiesById) : false;
 
-  const participationStatus = activity
-    ? resolveEventParticipationStatus(activity, participationByEventId)
+  const participationStatus = syncedActivity && !isEnded
+    ? resolveEventParticipationStatus(syncedActivity, participationByEventId)
     : 'none';
-  const hasAccess = canAccessActivityChat(participationStatus);
-  const isPast = activity ? isActivityPast(activity.dateTimeIso) : false;
+  const hasAccess = isEnded || canAccessActivityChat(participationStatus);
+  const isPast = syncedActivity ? isActivityPast(syncedActivity.dateTimeIso) : false;
+  const isChatClosed = isPast || isEnded;
   const messages = id ? messagesByActivityId[id] ?? [] : [];
 
   useEffect(() => {
@@ -62,7 +76,7 @@ export default function ActivityChatScreen() {
   }, [messages.length]);
 
   const handleSend = () => {
-    if (!id || !activity || !hasAccess || isPast) {
+    if (!id || !syncedActivity || !hasAccess || isChatClosed) {
       return;
     }
 
@@ -70,7 +84,7 @@ export default function ActivityChatScreen() {
     setDraftMessage('');
   };
 
-  if (!activity) {
+  if (!syncedActivity) {
     return (
       <View style={styles.screen}>
         <Stack.Screen options={{ headerShown: false }} />
@@ -113,7 +127,7 @@ export default function ActivityChatScreen() {
               </Pressable>
               <View style={styles.headerCopy}>
                 <ThemedText numberOfLines={1} style={styles.headerTitle}>
-                  {activity.title}
+                  {syncedActivity.title}
                 </ThemedText>
                 <ThemedText style={styles.headerSubtitle}>Activity Chat</ThemedText>
               </View>
@@ -130,12 +144,12 @@ export default function ActivityChatScreen() {
               <>
                 <View style={styles.metaCard}>
                   <ThemedText style={styles.metaTitle}>
-                    {isPast ? 'This activity has ended' : 'Coordinate before you meet'}
+                    {isChatClosed ? 'This activity has ended' : 'Coordinate before you meet'}
                   </ThemedText>
                   <ThemedText style={styles.metaBody}>
-                    {isPast
+                    {isChatClosed
                       ? 'Chat is now read-only. You can still review the conversation.'
-                      : `${activity.dateLabel} • ${activity.timeLabel} • ${activity.location}`}
+                      : `${syncedActivity.dateLabel} • ${syncedActivity.timeLabel} • ${syncedActivity.location}`}
                   </ThemedText>
                 </View>
 
@@ -147,7 +161,7 @@ export default function ActivityChatScreen() {
                   />
                 </View>
 
-                {isPast ? (
+                {isChatClosed ? (
                   <View style={styles.closedCard}>
                     <ThemedText style={styles.closedText}>
                       This activity has ended. Chat is closed.

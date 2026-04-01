@@ -155,6 +155,7 @@ export default function CreateActivityScreen() {
                 <View style={styles.chipRow}>
                   {ACTIVITY_CATEGORIES.map((item) => (
                     <SelectablePill
+                      color={item.color}
                       key={item.label}
                       icon={item.icon}
                       isSelected={selectedType === item.label}

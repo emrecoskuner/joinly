@@ -7,6 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 type ActivityFilterChipProps = {
   label: string;
   icon: string;
+  color: string;
   isActive?: boolean;
   onPress?: () => void;
 };
@@ -14,6 +15,7 @@ type ActivityFilterChipProps = {
 export function ActivityFilterChip({
   label,
   icon,
+  color,
   isActive = false,
   onPress,
 }: ActivityFilterChipProps) {
@@ -23,15 +25,22 @@ export function ActivityFilterChip({
       onPress={onPress}
       style={({ pressed }) => [
         styles.chip,
-        isActive ? styles.chipActive : styles.chipInactive,
+        isActive
+          ? [styles.chipActive, { backgroundColor: `${color}14`, borderColor: `${color}52` }]
+          : styles.chipInactive,
         pressed ? styles.chipPressed : null,
       ]}>
       <MaterialIcons
         name={icon as ComponentProps<typeof MaterialIcons>['name']}
         size={18}
-        color={isActive ? '#FFFFFF' : '#5E584F'}
+        color={isActive ? color : '#746C62'}
       />
-      <ThemedText style={[styles.label, isActive ? styles.labelActive : styles.labelInactive]}>
+      <ThemedText
+        style={[
+          styles.label,
+          isActive ? styles.labelActive : styles.labelInactive,
+          isActive ? { color } : null,
+        ]}>
         {label}
       </ThemedText>
     </Pressable>
@@ -46,12 +55,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 999,
+    borderWidth: 1,
   },
-  chipActive: {
-    backgroundColor: '#171411',
-  },
+  chipActive: {},
   chipInactive: {
-    backgroundColor: '#F5EEE4',
+    backgroundColor: '#FFFDFC',
+    borderColor: '#F0E8DE',
   },
   chipPressed: {
     opacity: 0.92,
@@ -62,7 +71,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   labelActive: {
-    color: '#FFFFFF',
+    color: '#5E584F',
   },
   labelInactive: {
     color: '#5E584F',

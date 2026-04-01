@@ -21,6 +21,7 @@ export function EventCard({
   onPress,
 }: EventCardProps) {
   const category = getActivityCategoryByLabel(event.category);
+  const accentColor = category.color;
   const statusLabel = getStatusLabel(participationStatus);
   const actionLabel = getActionLabel(event, participationStatus);
 
@@ -30,7 +31,7 @@ export function EventCard({
       onPress={onPress}
       style={({ pressed }) => [styles.card, pressed && onPress ? styles.cardPressed : null]}>
       <View style={styles.topRow}>
-        <View style={[styles.activityBadge, { backgroundColor: event.accentColor }]}>
+        <View style={[styles.activityBadge, { backgroundColor: accentColor }]}>
           {category ? <MaterialIcons color="#FFFFFF" name={category.icon as ComponentProps<typeof MaterialIcons>['name']} size={14} /> : null}
           <ThemedText style={styles.activityBadgeText}>{event.activityType}</ThemedText>
         </View>
@@ -49,8 +50,8 @@ export function EventCard({
 
       <View style={styles.footer}>
         <View style={styles.hostRow}>
-          <View style={[styles.avatar, { backgroundColor: `${event.accentColor}22` }]}>
-            <ThemedText style={[styles.avatarText, { color: event.accentColor }]}>
+          <View style={[styles.avatar, { backgroundColor: `${accentColor}22` }]}>
+            <ThemedText style={[styles.avatarText, { color: accentColor }]}>
               {event.hostInitials}
             </ThemedText>
           </View>

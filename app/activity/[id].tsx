@@ -9,6 +9,7 @@ import { useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -27,14 +28,25 @@ import {
 } from '@/components/create/create-form-ui';
 import { ThemedText } from '@/components/themed-text';
 import type { ApprovalMode, Visibility } from '@/store/activity-store';
-import { buildCreatedActivityDateTime, isActivityPast, useActivityStore } from '@/store/activity-store';
+import {
+  buildCreatedActivityDateTime,
+  isActivityPast,
+  mapActivityToEventItem,
+  useActivityStore,
+} from '@/store/activity-store';
 
 const PARTICIPANT_LIMITS = [2, 3, 4, 5, 6, 8, 10];
 
 export default function ActivityManagementScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { createdActivities, updateActivity, approveParticipant, rejectParticipant, removeParticipant } =
-    useActivityStore();
+  const {
+    createdActivities,
+    updateActivity,
+    approveParticipant,
+    rejectParticipant,
+    removeParticipant,
+    endActivity,
+  } = useActivityStore();
   const activity = createdActivities.find((item) => item.id === id);
   const [isEditing, setIsEditing] = useState(false);
   const [title, setTitle] = useState('');
@@ -46,6 +58,7 @@ export default function ActivityManagementScreen() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<Date | null>(null);
   const [activePicker, setActivePicker] = useState<DateTimePickerMode | null>(null);
+  const [isEndConfirmVisible, setIsEndConfirmVisible] = useState(false);
 
   if (!activity) {
     return (
@@ -159,6 +172,46 @@ export default function ActivityManagementScreen() {
         <View style={styles.glowTop} />
         <View style={styles.glowBottom} />
       </View>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setIsEndConfirmVisible(false)}
+        transparent
+        visible={isEndConfirmVisible}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setIsEndConfirmVisible(false)} />
+          <View style={styles.modalCard}>
+            <ThemedText style={styles.modalTitle}>End activity?</ThemedText>
+            <ThemedText style={styles.modalBody}>
+              This will cancel the activity for everyone and remove all participants.
+            </ThemedText>
+            <View style={styles.modalActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setIsEndConfirmVisible(false)}
+                style={({ pressed }) => [
+                  styles.modalSecondaryAction,
+                  pressed ? styles.actionPressed : null,
+                ]}>
+                <ThemedText style={styles.modalSecondaryActionText}>Cancel</ThemedText>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  setIsEndConfirmVisible(false);
+                  endActivity(mapActivityToEventItem(activity));
+                  router.replace('/(tabs)/(explore)');
+                }}
+                style={({ pressed }) => [
+                  styles.modalDangerAction,
+                  pressed ? styles.actionPressed : null,
+                ]}>
+                <ThemedText style={styles.modalDangerActionText}>End Activity</ThemedText>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safeArea}>
         <KeyboardAvoidingView
@@ -451,6 +504,19 @@ export default function ActivityManagementScreen() {
                 <HelperCard body="No pending requests right now. New join requests will appear here." />
               )}
             </View>
+
+            {!hasEnded ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setIsEndConfirmVisible(true)}
+                style={({ pressed }) => [
+                  styles.endActivityButton,
+                  pressed ? styles.actionPressed : null,
+                ]}>
+                <MaterialIcons color="#B14F46" name="event-busy" size={18} />
+                <ThemedText style={styles.endActivityButtonText}>End Activity</ThemedText>
+              </Pressable>
+            ) : null}
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -521,6 +587,67 @@ const styles = StyleSheet.create({
   background: {
     ...StyleSheet.absoluteFillObject,
     overflow: 'hidden',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    backgroundColor: 'rgba(21, 17, 13, 0.22)',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  modalCard: {
+    gap: 14,
+    padding: 22,
+    borderRadius: 28,
+    backgroundColor: '#FFFDFC',
+    borderWidth: 1,
+    borderColor: '#EFE4D6',
+  },
+  modalTitle: {
+    color: '#171411',
+    fontSize: 20,
+    lineHeight: 24,
+    fontWeight: '700',
+  },
+  modalBody: {
+    color: '#665D53',
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 4,
+  },
+  modalSecondaryAction: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F5EEE4',
+  },
+  modalSecondaryActionText: {
+    color: '#5E584F',
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '800',
+  },
+  modalDangerAction: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#B14F46',
+  },
+  modalDangerActionText: {
+    color: '#FFFDFC',
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '800',
   },
   glowTop: {
     position: 'absolute',
@@ -768,6 +895,23 @@ const styles = StyleSheet.create({
   },
   listColumn: {
     gap: 12,
+  },
+  endActivityButton: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 20,
+    backgroundColor: '#FBEDEA',
+    borderWidth: 1,
+    borderColor: '#F1CDC8',
+  },
+  endActivityButtonText: {
+    color: '#B14F46',
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '800',
   },
   textInput: {
     minHeight: 58,

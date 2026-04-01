@@ -1,4 +1,4 @@
-import { ACTIVITY_CATEGORIES } from '@/constants/activity-categories';
+import { ACTIVITY_CATEGORIES, getActivityCategoryByLabel } from '@/constants/activity-categories';
 import { ActivityFilter, EventItem } from '@/components/home/types';
 
 export const activityFilters: ActivityFilter[] = ACTIVITY_CATEGORIES;
@@ -32,7 +32,7 @@ export const featuredEvents: EventItem[] = [
     ],
     privacyType: 'Public',
     rating: 4.9,
-    accentColor: '#D9A441',
+    accentColor: getActivityCategoryByLabel('Run').color,
   },
   {
     id: 'event-2',
@@ -61,7 +61,7 @@ export const featuredEvents: EventItem[] = [
     ],
     privacyType: 'Invite-only',
     rating: 4.8,
-    accentColor: '#8C5A3C',
+    accentColor: getActivityCategoryByLabel('Coffee').color,
   },
   {
     id: 'event-3',
@@ -91,7 +91,7 @@ export const featuredEvents: EventItem[] = [
     ],
     privacyType: 'Private',
     rating: 4.7,
-    accentColor: '#3F7C74',
+    accentColor: getActivityCategoryByLabel('Sport').color,
   },
   {
     id: 'event-4',
@@ -120,7 +120,36 @@ export const featuredEvents: EventItem[] = [
     ],
     privacyType: 'Public',
     rating: 4.9,
-    accentColor: '#6D5BD0',
+    accentColor: getActivityCategoryByLabel('Food').color,
+  },
+  {
+    id: 'event-7',
+    title: 'Board Game Night in Cihangir',
+    dateTimeIso: '2026-04-03T19:30:00.000Z',
+    category: 'Games',
+    activityType: 'Games',
+    time: 'Fri, 7:30 PM',
+    dateLabel: 'Fri',
+    timeLabel: '7:30 PM',
+    location: 'Cihangir Living Room',
+    description: 'A friendly board game night with easy icebreakers, team games, and a small trusted group.',
+    notes: 'We will rotate through light strategy and social games. Newcomers are very welcome.',
+    hostId: 'user-theo-park',
+    hostName: 'Theo Park',
+    hostInitials: 'TP',
+    hostBio: 'Keeps group games welcoming, organized, and easy to join even if you do not know anyone yet.',
+    hostPhotoUrl:
+      'https://images.unsplash.com/photo-1507591064344-4c6ce005b128?auto=format&fit=crop&w=900&q=80',
+    participantCount: 5,
+    participantLimit: 8,
+    participants: [
+      { id: 'event-7-participant-1', userId: 'user-theo-park', name: 'Theo Park', initials: 'TP', rating: 4.6 },
+      { id: 'event-7-participant-2', userId: 'user-lena-hart', name: 'Lena Hart', initials: 'LH', rating: 4.7 },
+      { id: 'event-7-participant-3', userId: 'user-noah-chen', name: 'Noah Chen', initials: 'NC', rating: 4.7 },
+    ],
+    privacyType: 'Public',
+    rating: 4.6,
+    accentColor: getActivityCategoryByLabel('Games').color,
   },
 ];
 
@@ -152,7 +181,7 @@ const additionalActivityHubEvents: EventItem[] = [
     ],
     privacyType: 'Public',
     rating: 4.6,
-    accentColor: '#6D5B8C',
+    accentColor: getActivityCategoryByLabel('Reading').color,
   },
   {
     id: 'event-6',
@@ -181,7 +210,7 @@ const additionalActivityHubEvents: EventItem[] = [
     ],
     privacyType: 'Public',
     rating: 4.5,
-    accentColor: '#6F9078',
+    accentColor: getActivityCategoryByLabel('Wellness').color,
   },
 ];
 

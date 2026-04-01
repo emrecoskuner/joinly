@@ -36,6 +36,7 @@ export default function EditInterestsScreen() {
           <View style={styles.chipRow}>
             {ACTIVITY_CATEGORIES.map((category) => (
               <SelectablePill
+                color={category.color}
                 key={category.id}
                 icon={category.icon}
                 isSelected={draftInterestIds.includes(category.label)}

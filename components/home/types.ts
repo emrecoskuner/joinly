@@ -4,6 +4,7 @@ export type ActivityFilter = {
   id: string;
   label: string;
   icon: string;
+  color: string;
 };
 
 export type EventParticipant = {

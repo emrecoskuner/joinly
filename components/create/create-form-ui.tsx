@@ -27,6 +27,7 @@ export function FormSection({ title, hint, children }: FormSectionProps) {
 type SelectablePillProps = {
   label: string;
   icon?: MaterialIconName;
+  color?: string;
   isSelected?: boolean;
   onPress?: () => void;
 };
@@ -34,6 +35,7 @@ type SelectablePillProps = {
 export function SelectablePill({
   label,
   icon,
+  color = '#5B554D',
   isSelected = false,
   onPress,
 }: SelectablePillProps) {
@@ -43,18 +45,25 @@ export function SelectablePill({
       onPress={onPress}
       style={({ pressed }) => [
         styles.pill,
-        isSelected ? styles.pillSelected : styles.pillDefault,
+        isSelected
+          ? [styles.pillSelected, { backgroundColor: `${color}14`, borderColor: `${color}52` }]
+          : styles.pillDefault,
         pressed ? styles.pillPressed : null,
       ]}>
       {icon ? (
         <MaterialIcons
-          color={isSelected ? '#FFFDFC' : '#5B554D'}
+          color={isSelected ? color : '#746C62'}
           name={icon}
           size={17}
           style={styles.pillIcon}
         />
       ) : null}
-      <ThemedText style={[styles.pillLabel, isSelected ? styles.pillLabelSelected : null]}>
+      <ThemedText
+        style={[
+          styles.pillLabel,
+          isSelected ? styles.pillLabelSelected : null,
+          isSelected ? { color } : null,
+        ]}>
         {label}
       </ThemedText>
     </Pressable>
@@ -189,8 +198,6 @@ const styles = StyleSheet.create({
     borderColor: '#F0E8DE',
   },
   pillSelected: {
-    backgroundColor: '#201C18',
-    borderColor: '#201C18',
   },
   pillPressed: {
     opacity: 0.92,
@@ -205,7 +212,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   pillLabelSelected: {
-    color: '#FFFDFC',
+    color: '#5B554D',
   },
   optionCard: {
     gap: 12,

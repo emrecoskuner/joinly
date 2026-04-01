@@ -100,6 +100,7 @@ export default function HomeScreen() {
               {activityFilters.map((filter) => (
                 <ActivityFilterChip
                   key={filter.id}
+                  color={filter.color}
                   label={filter.label}
                   icon={filter.icon}
                   isActive={selectedCategory === filter.label}

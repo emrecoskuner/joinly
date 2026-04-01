@@ -76,9 +76,14 @@ export default function UserProfileScreen() {
             <ThemedText style={styles.sectionTitle}>Interests</ThemedText>
             <View style={styles.tagsWrap}>
               {interestTags.map((tag) => (
-                <View key={tag.id} style={styles.tagChip}>
-                  <MaterialIcons color="#5E584F" name={tag.icon} size={16} />
-                  <ThemedText style={styles.tagText}>{tag.label}</ThemedText>
+                <View
+                  key={tag.id}
+                  style={[
+                    styles.tagChip,
+                    { backgroundColor: `${tag.color}14`, borderColor: `${tag.color}38` },
+                  ]}>
+                  <MaterialIcons color={tag.color} name={tag.icon} size={16} />
+                  <ThemedText style={[styles.tagText, { color: tag.color }]}>{tag.label}</ThemedText>
                 </View>
               ))}
             </View>
@@ -281,12 +286,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 999,
-    backgroundColor: '#FFFDFC',
     borderWidth: 1,
-    borderColor: '#F0E6DA',
   },
   tagText: {
-    color: '#5E584F',
     fontSize: 14,
     lineHeight: 18,
     fontWeight: '700',

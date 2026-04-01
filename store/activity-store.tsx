@@ -5,6 +5,7 @@ import {
   CURRENT_USER_ID,
   getMockUserProfileById,
 } from '@/components/profile/mock-user-profiles';
+import { getActivityCategoryByLabel } from '@/constants/activity-categories';
 
 export type ApprovalMode = 'auto' | 'approval';
 export type Visibility = 'public' | 'private';
@@ -49,6 +50,7 @@ type ActivityStoreValue = {
   createdActivities: Activity[];
   participationByEventId: Record<string, Exclude<ParticipationStatus, 'hosting'>>;
   messagesByActivityId: Record<string, ActivityMessage[]>;
+  endedActivitiesById: Record<string, EventItem>;
   addActivity: (activity: Activity) => void;
   updateActivity: (activityId: string, updates: Partial<Activity>) => void;
   approveParticipant: (activityId: string, participantId: string) => boolean;
@@ -56,6 +58,8 @@ type ActivityStoreValue = {
   removeParticipant: (activityId: string, participantId: string) => void;
   joinEvent: (eventId: string) => void;
   requestToJoinEvent: (eventId: string) => void;
+  leaveActivity: (eventId: string) => void;
+  endActivity: (event: EventItem) => void;
   sendMessage: (activityId: string, text: string) => void;
 };
 
@@ -69,6 +73,7 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
   const [messagesByActivityId, setMessagesByActivityId] = useState<Record<string, ActivityMessage[]>>(
     {}
   );
+  const [endedActivitiesById, setEndedActivitiesById] = useState<Record<string, EventItem>>({});
 
   const addActivity = (activity: Activity) => {
     setCreatedActivities((currentValue) => [activity, ...currentValue]);
@@ -159,6 +164,29 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
     }));
   };
 
+  const leaveActivity = (eventId: string) => {
+    setParticipationByEventId((currentValue) => ({
+      ...currentValue,
+      [eventId]: 'none',
+    }));
+  };
+
+  const endActivity = (event: EventItem) => {
+    setEndedActivitiesById((currentValue) => ({
+      ...currentValue,
+      [event.id]: {
+        ...event,
+        participants: [],
+        participantCount: 0,
+      },
+    }));
+    setCreatedActivities((currentValue) => currentValue.filter((activity) => activity.id !== event.id));
+    setParticipationByEventId((currentValue) => ({
+      ...currentValue,
+      [event.id]: 'none',
+    }));
+  };
+
   const sendMessage = (activityId: string, text: string) => {
     const trimmedText = text.trim();
 
@@ -192,6 +220,7 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
         createdActivities,
         participationByEventId,
         messagesByActivityId,
+        endedActivitiesById,
         addActivity,
         updateActivity,
         approveParticipant,
@@ -199,6 +228,8 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
         removeParticipant,
         joinEvent,
         requestToJoinEvent,
+        leaveActivity,
+        endActivity,
         sendMessage,
       }}>
       {children}
@@ -261,12 +292,63 @@ export function resolveEventParticipationStatus(
   return participationByEventId[event.id] ?? 'none';
 }
 
+export function syncEventParticipationForCurrentUser(
+  event: EventItem,
+  participationByEventId: Record<string, Exclude<ParticipationStatus, 'hosting'>> = {}
+) {
+  const participationStatus = resolveEventParticipationStatus(event, participationByEventId);
+
+  if (participationStatus === 'hosting') {
+    return event;
+  }
+
+  const participantsWithoutCurrentUser = event.participants.filter(
+    (participant) => participant.userId !== CURRENT_USER_ID
+  );
+
+  if (participationStatus !== 'joined') {
+    return {
+      ...event,
+      participants: participantsWithoutCurrentUser,
+      participantCount: participantsWithoutCurrentUser.length,
+    };
+  }
+
+  const currentUserProfile = getMockUserProfileById(CURRENT_USER_ID);
+  const currentUserParticipant = {
+    id: `${event.id}-current-user`,
+    userId: CURRENT_USER_ID,
+    name: currentUserProfile?.name ?? 'You',
+    initials: currentUserProfile?.initials ?? 'YO',
+    rating: currentUserProfile?.rating ?? 4.5,
+  };
+
+  if (participantsWithoutCurrentUser.length !== event.participants.length) {
+    return event;
+  }
+
+  const nextParticipants = [...participantsWithoutCurrentUser, currentUserParticipant];
+
+  return {
+    ...event,
+    participants: nextParticipants,
+    participantCount: nextParticipants.length,
+  };
+}
+
 export function canAccessActivityChat(participationStatus: ParticipationStatus) {
   return participationStatus === 'joined' || participationStatus === 'hosting';
 }
 
 export function isActivityPast(dateTimeIso: string) {
   return new Date(dateTimeIso).getTime() < Date.now();
+}
+
+export function isActivityEnded(
+  eventId: string,
+  endedActivitiesById: Record<string, EventItem> = {}
+) {
+  return Boolean(endedActivitiesById[eventId]);
 }
 
 export function formatActivitySchedule(activity: Activity) {
@@ -283,24 +365,7 @@ export function buildCreatedActivityDateTime(activity: Activity) {
 }
 
 export function getActivityAccentColor(type: string) {
-  switch (type) {
-    case 'Coffee':
-      return '#8C5A3C';
-    case 'Food':
-      return '#C46D3A';
-    case 'Run':
-      return '#D9A441';
-    case 'Walk':
-      return '#5A7A62';
-    case 'Reading':
-      return '#6D5B8C';
-    case 'Sport':
-      return '#3F7C74';
-    case 'Wellness':
-      return '#6F9078';
-    default:
-      return '#6E6256';
-  }
+  return getActivityCategoryByLabel(type).color;
 }
 
 export function buildMockParticipants(participantLimit: number) {
@@ -356,6 +421,8 @@ function formatActivityType(type: string) {
       return 'Sports';
     case 'Wellness':
       return 'Wellness Session';
+    case 'Games':
+      return 'Game Night';
     default:
       return type;
   }
