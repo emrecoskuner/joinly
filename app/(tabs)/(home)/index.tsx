@@ -11,10 +11,11 @@ import { activityFilters, featuredEvents } from '@/components/home/mock-data';
 import { AddActivityCard, MyActivityCard } from '@/components/home/my-activity-card';
 import { SearchBar } from '@/components/home/search-bar';
 import { ThemedText } from '@/components/themed-text';
-import { useActivityStore } from '@/store/activity-store';
+import { resolveEventParticipationStatus, useActivityStore } from '@/store/activity-store';
 
 export default function HomeScreen() {
-  const { createdActivities } = useActivityStore();
+  const { createdActivities, participationByEventId, joinEvent, requestToJoinEvent } =
+    useActivityStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -124,18 +125,31 @@ export default function HomeScreen() {
             {hasResults ? (
               <View style={styles.cardsColumn}>
                 {filteredFeaturedEvents.length > 0 ? (
-                  filteredFeaturedEvents.map((event) => (
-                    <EventCard
-                      key={event.id}
-                      event={event}
-                      onPress={() =>
-                        router.push({
-                          pathname: '/event/[id]',
-                          params: { id: event.id },
-                        })
-                      }
-                    />
-                  ))
+                  filteredFeaturedEvents.map((event) => {
+                    const participationStatus = resolveEventParticipationStatus(
+                      event,
+                      participationByEventId
+                    );
+
+                    return (
+                      <EventCard
+                        key={event.id}
+                        event={event}
+                        participationStatus={participationStatus}
+                        onStatusActionPress={() =>
+                          event.privacyType === 'Public'
+                            ? joinEvent(event.id)
+                            : requestToJoinEvent(event.id)
+                        }
+                        onPress={() =>
+                          router.push({
+                            pathname: '/event/[id]',
+                            params: { id: event.id },
+                          })
+                        }
+                      />
+                    );
+                  })
                 ) : hasActiveSearch || selectedCategory ? (
                   <View style={styles.emptyStateCard}>
                     <ThemedText style={styles.emptyStateTitle}>

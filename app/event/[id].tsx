@@ -2,18 +2,24 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getActivityCategoryByLabel } from '@/constants/activity-categories';
 import { getFeaturedEventById } from '@/components/home/mock-data';
 import { ThemedText } from '@/components/themed-text';
+import {
+  canAccessActivityChat,
+  isActivityPast,
+  resolveEventParticipationStatus,
+  useActivityStore,
+  type ParticipationStatus,
+} from '@/store/activity-store';
 
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const event = id ? getFeaturedEventById(id) : undefined;
-  const [actionState, setActionState] = useState<'idle' | 'joined' | 'requested'>('idle');
+  const { participationByEventId, joinEvent, requestToJoinEvent } = useActivityStore();
 
   if (!event) {
     return (
@@ -33,14 +39,10 @@ export default function EventDetailScreen() {
 
   const category = getActivityCategoryByLabel(event.category);
   const isPrivateActivity = event.privacyType !== 'Public';
-  const actionLabel =
-    actionState === 'joined'
-      ? 'Joined'
-      : actionState === 'requested'
-        ? 'Request Sent'
-        : isPrivateActivity
-          ? 'Request to Join'
-          : 'Join Activity';
+  const participationStatus = resolveEventParticipationStatus(event, participationByEventId);
+  const statusCopy = getParticipationStateCopy(participationStatus);
+  const hasChatAccess = canAccessActivityChat(participationStatus);
+  const hasEnded = isActivityPast(event.dateTimeIso);
 
   return (
     <View style={styles.screen}>
@@ -83,17 +85,51 @@ export default function EventDetailScreen() {
               </View>
             ) : null}
 
-            <Pressable
-              accessibilityRole="button"
-              disabled={actionState !== 'idle'}
-              onPress={() => setActionState(isPrivateActivity ? 'requested' : 'joined')}
-              style={({ pressed }) => [
-                styles.primaryAction,
-                actionState !== 'idle' ? styles.primaryActionDisabled : null,
-                pressed && actionState === 'idle' ? styles.buttonPressed : null,
-              ]}>
-              <ThemedText style={styles.primaryActionText}>{actionLabel}</ThemedText>
-            </Pressable>
+            {participationStatus === 'none' ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() =>
+                  isPrivateActivity ? requestToJoinEvent(event.id) : joinEvent(event.id)
+                }
+                style={({ pressed }) => [
+                  styles.primaryAction,
+                  pressed ? styles.buttonPressed : null,
+                ]}>
+                <ThemedText style={styles.primaryActionText}>
+                  {isPrivateActivity ? 'Request to Join' : 'Join Activity'}
+                </ThemedText>
+              </Pressable>
+            ) : (
+              <View style={styles.statusStack}>
+                <View style={styles.statusCard}>
+                  <ThemedText style={styles.statusCardLabel}>{statusCopy.label}</ThemedText>
+                  <ThemedText style={styles.statusCardText}>{statusCopy.body}</ThemedText>
+                </View>
+                {hasChatAccess ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() =>
+                      router.push({
+                        pathname: '/chat/[id]',
+                        params: { id: event.id },
+                      })
+                    }
+                    style={({ pressed }) => [
+                      styles.chatButton,
+                      pressed ? styles.buttonPressed : null,
+                    ]}>
+                    <MaterialIcons color="#5E584F" name="chat-bubble-outline" size={18} />
+                    <View style={styles.chatButtonCopy}>
+                      <ThemedText style={styles.chatButtonLabel}>Chat</ThemedText>
+                      <ThemedText style={styles.chatButtonBody}>
+                        {hasEnded ? 'View conversation' : 'Open activity chat'}
+                      </ThemedText>
+                    </View>
+                    <MaterialIcons color="#8A8278" name="chevron-right" size={20} />
+                  </Pressable>
+                ) : null}
+              </View>
+            )}
           </View>
 
           <View style={styles.section}>
@@ -184,6 +220,32 @@ function MetaRow({
       </View>
     </View>
   );
+}
+
+function getParticipationStateCopy(participationStatus: ParticipationStatus) {
+  switch (participationStatus) {
+    case 'hosting':
+      return {
+        label: 'Hosting',
+        body: 'You are hosting this activity.',
+      };
+    case 'joined':
+      return {
+        label: 'Joined',
+        body: 'You are confirmed for this activity.',
+      };
+    case 'pending':
+      return {
+        label: 'Request Sent',
+        body: 'Your request is pending the host approval.',
+      };
+    case 'none':
+    default:
+      return {
+        label: '',
+        body: '',
+      };
+  }
 }
 
 const styles = StyleSheet.create({
@@ -350,6 +412,54 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 19,
     fontWeight: '800',
+  },
+  statusCard: {
+    gap: 6,
+    padding: 16,
+    borderRadius: 22,
+    backgroundColor: '#F5EEE4',
+    borderWidth: 1,
+    borderColor: '#E8DCCB',
+  },
+  statusCardLabel: {
+    color: '#171411',
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '800',
+  },
+  statusCardText: {
+    color: '#5E584F',
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  statusStack: {
+    gap: 12,
+  },
+  chatButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 16,
+    borderRadius: 22,
+    backgroundColor: '#FFFDFC',
+    borderWidth: 1,
+    borderColor: '#EADFD0',
+  },
+  chatButtonCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  chatButtonLabel: {
+    color: '#171411',
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '800',
+  },
+  chatButtonBody: {
+    color: '#6A6258',
+    fontSize: 13,
+    lineHeight: 18,
   },
   buttonPressed: {
     opacity: 0.92,

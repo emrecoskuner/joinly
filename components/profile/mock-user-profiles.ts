@@ -19,6 +19,8 @@ export type UserProfile = {
   comments: UserComment[];
 };
 
+export const CURRENT_USER_ID = 'user-maya-ceylan';
+
 export const mockUserProfiles: UserProfile[] = [
   {
     id: 'user-maya-ceylan',

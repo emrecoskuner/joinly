@@ -1,4 +1,10 @@
-import type { Activity } from '@/store/activity-store';
+import { allEvents } from '@/components/home/mock-data';
+import {
+  buildCreatedActivityDateTime,
+  type Activity,
+  type ParticipationStatus,
+  resolveEventParticipationStatus,
+} from '@/store/activity-store';
 
 export type ActivityHubItem = {
   id: string;
@@ -6,9 +12,7 @@ export type ActivityHubItem = {
   dateTimeIso: string;
   timeLabel: string;
   shortLocation: string;
-  hostedByMe: boolean;
-  joinedByMe: boolean;
-  isPending: boolean;
+  participationStatus: Exclude<ParticipationStatus, 'none'>;
   isPast: boolean;
   participantCount?: number;
   hostName?: string;
@@ -16,85 +20,15 @@ export type ActivityHubItem = {
   detailRoute: '/activity/[id]' | '/event/[id]';
 };
 
-const mockActivityHubItems: ActivityHubItem[] = [
-  {
-    id: 'event-1',
-    title: 'Sunrise Run & Matcha',
-    dateTimeIso: '2026-04-01T07:00:00.000Z',
-    timeLabel: 'Today • 7:00 AM',
-    shortLocation: 'Moda Coast Trail',
-    hostedByMe: false,
-    joinedByMe: true,
-    isPending: false,
-    isPast: false,
-    participantCount: 8,
-    hostName: 'Lina Park',
-    hostInitials: 'LP',
-    detailRoute: '/event/[id]',
-  },
-  {
-    id: 'event-4',
-    title: 'Rooftop Games & Good Talk',
-    dateTimeIso: '2026-04-02T20:00:00.000Z',
-    timeLabel: 'Tomorrow • 8:00 PM',
-    shortLocation: 'Cihangir Terrace',
-    hostedByMe: false,
-    joinedByMe: true,
-    isPending: false,
-    isPast: false,
-    participantCount: 12,
-    hostName: 'Mert Kaya',
-    hostInitials: 'MK',
-    detailRoute: '/event/[id]',
-  },
-  {
-    id: 'event-2',
-    title: 'Neighborhood Coffee Swap',
-    dateTimeIso: '2026-04-01T11:30:00.000Z',
-    timeLabel: 'Today • 11:30 AM',
-    shortLocation: 'Karakoy Roasters',
-    hostedByMe: false,
-    joinedByMe: false,
-    isPending: true,
-    isPast: false,
-    participantCount: 6,
-    hostName: 'Emir Demir',
-    hostInitials: 'ED',
-    detailRoute: '/event/[id]',
-  },
-  {
-    id: 'event-5',
-    title: 'Seaside Reading Circle',
-    dateTimeIso: '2026-03-18T18:30:00.000Z',
-    timeLabel: 'Wed, Mar 18 • 18:30',
-    shortLocation: 'Caddebostan Coast',
-    hostedByMe: true,
-    joinedByMe: false,
-    isPending: false,
-    isPast: true,
-    participantCount: 5,
-    detailRoute: '/event/[id]',
-  },
-  {
-    id: 'event-6',
-    title: 'Studio Stretch Session',
-    dateTimeIso: '2026-03-10T19:00:00.000Z',
-    timeLabel: 'Tue, Mar 10 • 19:00',
-    shortLocation: 'Nisantasi Flow Studio',
-    hostedByMe: false,
-    joinedByMe: true,
-    isPending: false,
-    isPast: true,
-    participantCount: 7,
-    hostName: 'Mina Ates',
-    hostInitials: 'MA',
-    detailRoute: '/event/[id]',
-  },
-];
+export function getActivityHubItems(
+  createdActivities: Activity[] = [],
+  participationByEventId: Record<string, Exclude<ParticipationStatus, 'hosting'>> = {}
+) {
+  const safeCreatedActivities = Array.isArray(createdActivities) ? createdActivities : [];
+  const safeEvents = Array.isArray(allEvents) ? allEvents : [];
 
-export function getActivityHubItems(createdActivities: Activity[]) {
   return [
-    ...createdActivities.map((activity) => {
+    ...safeCreatedActivities.map((activity) => {
       const dateTimeIso = buildCreatedActivityDateTime(activity);
       const isPast = new Date(dateTimeIso).getTime() < Date.now();
 
@@ -104,25 +38,36 @@ export function getActivityHubItems(createdActivities: Activity[]) {
         dateTimeIso,
         timeLabel: formatDateTimeLabel(dateTimeIso),
         shortLocation: activity.location,
-        hostedByMe: true,
-        joinedByMe: false,
-        isPending: false,
+        participationStatus: 'hosting' as const,
         isPast,
         participantCount: activity.approvedParticipants.length,
         detailRoute: '/activity/[id]' as const,
       };
     }),
-    ...mockActivityHubItems,
+    ...safeEvents
+      .map((event) => {
+        const participationStatus = resolveEventParticipationStatus(event, participationByEventId);
+
+        if (participationStatus === 'none') {
+          return null;
+        }
+
+        return {
+          id: event.id,
+          title: event.title,
+          dateTimeIso: event.dateTimeIso,
+          timeLabel: `${event.dateLabel} • ${event.timeLabel}`,
+          shortLocation: event.location,
+          participationStatus,
+          isPast: new Date(event.dateTimeIso).getTime() < Date.now(),
+          participantCount: event.participantCount,
+          hostName: event.hostName,
+          hostInitials: event.hostInitials,
+          detailRoute: '/event/[id]' as const,
+        };
+      })
+      .filter((item): item is ActivityHubItem => item !== null),
   ];
-}
-
-function buildCreatedActivityDateTime(activity: Activity) {
-  const dateValue = new Date(activity.date);
-  const timeValue = new Date(activity.time);
-
-  dateValue.setHours(timeValue.getHours(), timeValue.getMinutes(), 0, 0);
-
-  return dateValue.toISOString();
 }
 
 function formatDateTimeLabel(dateTimeIso: string) {

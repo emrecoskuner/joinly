@@ -11,14 +11,13 @@ type ActivityHubCardProps = {
 };
 
 export function ActivityHubCard({ activity, view, onPress }: ActivityHubCardProps) {
-  const roleLabel = activity.isPending
-    ? 'Request Pending'
-    : activity.hostedByMe
-      ? view === 'past'
-        ? 'Hosted'
-        : 'Hosting'
-      : view === 'past'
-        ? 'Joined'
+  const roleLabel =
+    activity.participationStatus === 'pending'
+      ? 'Request Pending'
+      : activity.participationStatus === 'hosting'
+        ? view === 'past'
+          ? 'Hosted'
+          : 'Hosting'
         : 'Joined';
 
   return (
@@ -31,8 +30,16 @@ export function ActivityHubCard({ activity, view, onPress }: ActivityHubCardProp
         pressed ? styles.cardPressed : null,
       ]}>
       <View style={styles.headerRow}>
-        <View style={[styles.rolePill, activity.isPending ? styles.pendingPill : null]}>
-          <ThemedText style={[styles.roleText, activity.isPending ? styles.pendingText : null]}>
+        <View
+          style={[
+            styles.rolePill,
+            activity.participationStatus === 'pending' ? styles.pendingPill : null,
+          ]}>
+          <ThemedText
+            style={[
+              styles.roleText,
+              activity.participationStatus === 'pending' ? styles.pendingText : null,
+            ]}>
             {roleLabel}
           </ThemedText>
         </View>
@@ -58,7 +65,7 @@ export function ActivityHubCard({ activity, view, onPress }: ActivityHubCardProp
           <View />
         )}
 
-        {!activity.hostedByMe && activity.hostInitials ? (
+        {activity.participationStatus !== 'hosting' && activity.hostInitials ? (
           <View style={styles.hostRow}>
             <View style={styles.hostAvatar}>
               <ThemedText style={styles.hostAvatarText}>{activity.hostInitials}</ThemedText>

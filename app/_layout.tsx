@@ -40,6 +40,12 @@ export default function RootLayout() {
               }}
             />
             <Stack.Screen
+              name="chat/[id]"
+              options={{
+                presentation: 'card',
+              }}
+            />
+            <Stack.Screen
               name="user/[id]"
               options={{
                 presentation: 'card',

@@ -185,7 +185,7 @@ const additionalActivityHubEvents: EventItem[] = [
   },
 ];
 
-const allEvents = [...featuredEvents, ...additionalActivityHubEvents];
+export const allEvents = [...featuredEvents, ...additionalActivityHubEvents];
 
 export function getFeaturedEventById(id: string) {
   return allEvents.find((event) => event.id === id);

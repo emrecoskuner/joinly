@@ -5,14 +5,24 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { getActivityCategoryByLabel } from '@/constants/activity-categories';
 import { ThemedText } from '@/components/themed-text';
 import { EventItem } from '@/components/home/types';
+import type { ParticipationStatus } from '@/store/activity-store';
 
 type EventCardProps = {
   event: EventItem;
+  participationStatus?: ParticipationStatus;
+  onStatusActionPress?: () => void;
   onPress?: () => void;
 };
 
-export function EventCard({ event, onPress }: EventCardProps) {
+export function EventCard({
+  event,
+  participationStatus = 'none',
+  onStatusActionPress,
+  onPress,
+}: EventCardProps) {
   const category = getActivityCategoryByLabel(event.category);
+  const statusLabel = getStatusLabel(participationStatus);
+  const actionLabel = getActionLabel(event, participationStatus);
 
   return (
     <Pressable
@@ -51,6 +61,21 @@ export function EventCard({ event, onPress }: EventCardProps) {
         </View>
 
         <View style={styles.detailsColumn}>
+          {statusLabel ? <StatusPill value={statusLabel} /> : null}
+          {!statusLabel && actionLabel && onStatusActionPress ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={(pressEvent) => {
+                pressEvent.stopPropagation();
+                onStatusActionPress();
+              }}
+              style={({ pressed }) => [
+                styles.actionPill,
+                pressed ? styles.actionPillPressed : null,
+              ]}>
+              <ThemedText style={styles.actionText}>{actionLabel}</ThemedText>
+            </Pressable>
+          ) : null}
           <DetailPill icon="group" value={`${event.participantCount} going`} />
           <DetailPill icon="shield" value={event.privacyType} />
         </View>
@@ -81,6 +106,39 @@ function DetailPill({
       <ThemedText style={styles.detailText}>{value}</ThemedText>
     </View>
   );
+}
+
+function StatusPill({ value }: { value: string }) {
+  return (
+    <View style={styles.statusPill}>
+      <ThemedText style={styles.statusText}>{value}</ThemedText>
+    </View>
+  );
+}
+
+function getStatusLabel(participationStatus: ParticipationStatus) {
+  switch (participationStatus) {
+    case 'hosting':
+      return 'Hosting';
+    case 'joined':
+      return 'Joined';
+    case 'pending':
+      return 'Request Sent';
+    case 'none':
+    default:
+      return null;
+  }
+}
+
+function getActionLabel(
+  event: Pick<EventItem, 'privacyType'>,
+  participationStatus: ParticipationStatus
+) {
+  if (participationStatus !== 'none') {
+    return null;
+  }
+
+  return event.privacyType === 'Public' ? 'Join' : 'Request';
 }
 
 const styles = StyleSheet.create({
@@ -197,6 +255,33 @@ const styles = StyleSheet.create({
   detailsColumn: {
     alignItems: 'flex-end',
     gap: 8,
+  },
+  statusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: '#EEE6DA',
+  },
+  statusText: {
+    color: '#5A5045',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+  },
+  actionPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#171411',
+  },
+  actionPillPressed: {
+    opacity: 0.92,
+  },
+  actionText: {
+    color: '#FFFDFC',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
   },
   detailPill: {
     flexDirection: 'row',

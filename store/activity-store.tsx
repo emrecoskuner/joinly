@@ -1,6 +1,10 @@
 import { createContext, type ReactNode, useContext, useState } from 'react';
 
 import type { EventItem, PrivacyType } from '@/components/home/types';
+import {
+  CURRENT_USER_ID,
+  getMockUserProfileById,
+} from '@/components/profile/mock-user-profiles';
 
 export type ApprovalMode = 'auto' | 'approval';
 export type Visibility = 'public' | 'private';
@@ -9,6 +13,17 @@ export type Participant = {
   name: string;
   initials: string;
   rating: number;
+};
+
+export type ParticipationStatus = 'none' | 'pending' | 'joined' | 'hosting';
+export type ActivityMessage = {
+  id: string;
+  activityId: string;
+  senderId: string;
+  senderName: string;
+  senderAvatar: string;
+  text: string;
+  createdAt: string;
 };
 
 export type Activity = {
@@ -30,18 +45,30 @@ export type Activity = {
 };
 
 type ActivityStoreValue = {
+  currentUserId: string;
   createdActivities: Activity[];
+  participationByEventId: Record<string, Exclude<ParticipationStatus, 'hosting'>>;
+  messagesByActivityId: Record<string, ActivityMessage[]>;
   addActivity: (activity: Activity) => void;
   updateActivity: (activityId: string, updates: Partial<Activity>) => void;
   approveParticipant: (activityId: string, participantId: string) => boolean;
   rejectParticipant: (activityId: string, participantId: string) => void;
   removeParticipant: (activityId: string, participantId: string) => void;
+  joinEvent: (eventId: string) => void;
+  requestToJoinEvent: (eventId: string) => void;
+  sendMessage: (activityId: string, text: string) => void;
 };
 
 const ActivityStoreContext = createContext<ActivityStoreValue | null>(null);
 
 export function ActivityStoreProvider({ children }: { children: ReactNode }) {
   const [createdActivities, setCreatedActivities] = useState<Activity[]>([]);
+  const [participationByEventId, setParticipationByEventId] = useState<
+    Record<string, Exclude<ParticipationStatus, 'hosting'>>
+  >({});
+  const [messagesByActivityId, setMessagesByActivityId] = useState<Record<string, ActivityMessage[]>>(
+    {}
+  );
 
   const addActivity = (activity: Activity) => {
     setCreatedActivities((currentValue) => [activity, ...currentValue]);
@@ -118,15 +145,61 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  const joinEvent = (eventId: string) => {
+    setParticipationByEventId((currentValue) => ({
+      ...currentValue,
+      [eventId]: 'joined',
+    }));
+  };
+
+  const requestToJoinEvent = (eventId: string) => {
+    setParticipationByEventId((currentValue) => ({
+      ...currentValue,
+      [eventId]: 'pending',
+    }));
+  };
+
+  const sendMessage = (activityId: string, text: string) => {
+    const trimmedText = text.trim();
+
+    if (!trimmedText) {
+      return;
+    }
+
+    const currentUserProfile = getMockUserProfileById(CURRENT_USER_ID);
+
+    setMessagesByActivityId((currentValue) => ({
+      ...currentValue,
+      [activityId]: [
+        ...(currentValue[activityId] ?? []),
+        {
+          id: `${activityId}-${Date.now()}`,
+          activityId,
+          senderId: CURRENT_USER_ID,
+          senderName: currentUserProfile?.name ?? 'You',
+          senderAvatar: currentUserProfile?.photoUrl ?? '',
+          text: trimmedText,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    }));
+  };
+
   return (
     <ActivityStoreContext.Provider
       value={{
+        currentUserId: CURRENT_USER_ID,
         createdActivities,
+        participationByEventId,
+        messagesByActivityId,
         addActivity,
         updateActivity,
         approveParticipant,
         rejectParticipant,
         removeParticipant,
+        joinEvent,
+        requestToJoinEvent,
+        sendMessage,
       }}>
       {children}
     </ActivityStoreContext.Provider>
@@ -147,21 +220,66 @@ export function mapActivityToEventItem(activity: Activity): EventItem {
   return {
     id: activity.id,
     title: activity.title,
+    dateTimeIso: buildCreatedActivityDateTime(activity),
+    category: activity.type,
     activityType: formatActivityType(activity.type),
     time: formatActivitySchedule(activity),
+    dateLabel: formatDateLabel(new Date(activity.date)),
+    timeLabel: formatTimeLabel(new Date(activity.time)),
     location: activity.location,
     description: activity.description,
+    notes: activity.description,
+    hostId: CURRENT_USER_ID,
     hostName: activity.hostName,
     hostInitials: activity.hostInitials,
+    hostBio: 'Trusted Joinly host with a clear plan and a thoughtful group vibe.',
+    hostPhotoUrl:
+      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=900&q=80',
     participantCount: activity.approvedParticipants.length,
+    participantLimit: activity.participantLimit,
+    participants: activity.approvedParticipants.map((participant) => ({
+      id: participant.id,
+      userId: participant.id,
+      name: participant.name,
+      initials: participant.initials,
+      rating: participant.rating,
+    })),
     privacyType: mapPrivacyType(activity),
     rating: 5,
     accentColor: getActivityAccentColor(activity.type),
   };
 }
 
+export function resolveEventParticipationStatus(
+  event: Pick<EventItem, 'id' | 'hostId'>,
+  participationByEventId: Record<string, Exclude<ParticipationStatus, 'hosting'>> = {}
+): ParticipationStatus {
+  if (event.hostId === CURRENT_USER_ID) {
+    return 'hosting';
+  }
+
+  return participationByEventId[event.id] ?? 'none';
+}
+
+export function canAccessActivityChat(participationStatus: ParticipationStatus) {
+  return participationStatus === 'joined' || participationStatus === 'hosting';
+}
+
+export function isActivityPast(dateTimeIso: string) {
+  return new Date(dateTimeIso).getTime() < Date.now();
+}
+
 export function formatActivitySchedule(activity: Activity) {
   return `${formatDateLabel(new Date(activity.date))} • ${formatTimeLabel(new Date(activity.time))}`;
+}
+
+export function buildCreatedActivityDateTime(activity: Activity) {
+  const dateValue = new Date(activity.date);
+  const timeValue = new Date(activity.time);
+
+  dateValue.setHours(timeValue.getHours(), timeValue.getMinutes(), 0, 0);
+
+  return dateValue.toISOString();
 }
 
 export function getActivityAccentColor(type: string) {

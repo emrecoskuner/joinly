@@ -27,7 +27,7 @@ import {
 } from '@/components/create/create-form-ui';
 import { ThemedText } from '@/components/themed-text';
 import type { ApprovalMode, Visibility } from '@/store/activity-store';
-import { useActivityStore } from '@/store/activity-store';
+import { buildCreatedActivityDateTime, isActivityPast, useActivityStore } from '@/store/activity-store';
 
 const PARTICIPANT_LIMITS = [2, 3, 4, 5, 6, 8, 10];
 
@@ -72,6 +72,7 @@ export default function ActivityManagementScreen() {
   const approvedCount = activity.approvedParticipants.length;
   const pendingCount = activity.pendingParticipants.length;
   const spotsLeft = Math.max(activity.participantLimit - approvedCount, 0);
+  const hasEnded = isActivityPast(buildCreatedActivityDateTime(activity));
   const formattedDate = formatDateLabel(new Date(activity.date));
   const formattedTime = formatTimeLabel(new Date(activity.time));
   const editDateLabel = selectedDate ? formatDateLabel(selectedDate) : formattedDate;
@@ -218,6 +219,28 @@ export default function ActivityManagementScreen() {
                 <StatCard label="Pending" value={`${pendingCount}`} />
                 <StatCard label="Spots left" value={`${spotsLeft}`} />
               </View>
+
+              <Pressable
+                accessibilityRole="button"
+                onPress={() =>
+                  router.push({
+                    pathname: '/chat/[id]',
+                    params: { id: activity.id },
+                  })
+                }
+                style={({ pressed }) => [
+                  styles.chatAction,
+                  pressed ? styles.actionPressed : null,
+                ]}>
+                <MaterialIcons color="#5E584F" name="chat-bubble-outline" size={18} />
+                <View style={styles.chatActionCopy}>
+                  <ThemedText style={styles.chatActionTitle}>Chat</ThemedText>
+                  <ThemedText style={styles.chatActionBody}>
+                    {hasEnded ? 'View read-only conversation' : 'Open activity chat'}
+                  </ThemedText>
+                </View>
+                <MaterialIcons color="#8A8278" name="chevron-right" size={20} />
+              </Pressable>
             </View>
 
             {isEditing ? (
@@ -609,6 +632,31 @@ const styles = StyleSheet.create({
   },
   actionPressed: {
     opacity: 0.92,
+  },
+  chatAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 16,
+    borderRadius: 22,
+    backgroundColor: '#FFFDFC',
+    borderWidth: 1,
+    borderColor: '#EADFD0',
+  },
+  chatActionCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  chatActionTitle: {
+    color: '#171411',
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '800',
+  },
+  chatActionBody: {
+    color: '#6A6258',
+    fontSize: 13,
+    lineHeight: 18,
   },
   statsRow: {
     flexDirection: 'row',

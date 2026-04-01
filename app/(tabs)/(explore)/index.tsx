@@ -18,9 +18,12 @@ const SEGMENTS: { key: SegmentKey; label: string }[] = [
 ];
 
 export default function ActivitiesScreen() {
-  const { createdActivities } = useActivityStore();
+  const { createdActivities, participationByEventId } = useActivityStore();
   const [activeSegment, setActiveSegment] = useState<SegmentKey>('upcoming');
-  const items = useMemo(() => getActivityHubItems(createdActivities), [createdActivities]);
+  const items = useMemo(
+    () => getActivityHubItems(createdActivities ?? [], participationByEventId ?? {}),
+    [createdActivities, participationByEventId]
+  );
   const filteredItems = getFilteredItems(items, activeSegment);
 
   return (
@@ -105,16 +108,26 @@ function getFilteredItems(items: ActivityHubItem[], segment: SegmentKey) {
   switch (segment) {
     case 'pending':
       return items
-        .filter((activity) => activity.isPending)
+        .filter((activity) => activity.participationStatus === 'pending')
         .sort((a, b) => new Date(a.dateTimeIso).getTime() - new Date(b.dateTimeIso).getTime());
     case 'past':
       return items
-        .filter((activity) => activity.isPast && (activity.hostedByMe || activity.joinedByMe))
+        .filter(
+          (activity) =>
+            activity.isPast &&
+            (activity.participationStatus === 'hosting' ||
+              activity.participationStatus === 'joined')
+        )
         .sort((a, b) => new Date(b.dateTimeIso).getTime() - new Date(a.dateTimeIso).getTime());
     case 'upcoming':
     default:
       return items
-        .filter((activity) => (activity.hostedByMe || activity.joinedByMe) && !activity.isPast && !activity.isPending)
+        .filter(
+          (activity) =>
+            !activity.isPast &&
+            (activity.participationStatus === 'hosting' ||
+              activity.participationStatus === 'joined')
+        )
         .sort((a, b) => new Date(a.dateTimeIso).getTime() - new Date(b.dateTimeIso).getTime());
   }
 }
