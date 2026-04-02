@@ -1,16 +1,31 @@
-import { createContext, type ReactNode, useContext, useState } from 'react';
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
 import type { EventItem, PrivacyType } from '@/components/home/types';
+import { useAuth } from '@/context/AuthContext';
 import {
-  CURRENT_USER_ID,
-  getMockUserProfileById,
-} from '@/components/profile/mock-user-profiles';
-import { getActivityCategoryByLabel } from '@/constants/activity-categories';
+  createActivity as createActivityService,
+  endActivity as endActivityService,
+  getAccentColor,
+  getActivities,
+  type ActivityParticipant,
+  type ActivityRecord,
+  type ApprovalMode,
+  type CreateActivityPayload,
+  type ProfileSummary,
+  type Visibility,
+  updateActivity as updateActivityService,
+} from '@/services/activities';
+import {
+  approveParticipant as approveParticipantService,
+  joinOrRequestActivity,
+  leaveActivity as leaveActivityService,
+  rejectParticipant as rejectParticipantService,
+  removeParticipant as removeParticipantService,
+} from '@/services/participants';
 
-export type ApprovalMode = 'auto' | 'approval';
-export type Visibility = 'public' | 'private';
 export type Participant = {
   id: string;
+  userId?: string;
   name: string;
   initials: string;
   rating: number;
@@ -29,6 +44,7 @@ export type ActivityMessage = {
 
 export type Activity = {
   id: string;
+  hostId?: string;
   type: string;
   title: string;
   date: string;
@@ -41,137 +57,305 @@ export type Activity = {
   createdAt: string;
   hostName: string;
   hostInitials: string;
+  hostBio?: string;
+  hostPhotoUrl?: string;
+  hostRating?: number;
   approvedParticipants: Participant[];
   pendingParticipants: Participant[];
 };
 
+type MutationResponse = {
+  error: Error | null;
+};
+
 type ActivityStoreValue = {
   currentUserId: string;
+  currentUserParticipant: Participant | null;
+  browseEvents: EventItem[];
   createdActivities: Activity[];
   participationByEventId: Record<string, Exclude<ParticipationStatus, 'hosting'>>;
   messagesByActivityId: Record<string, ActivityMessage[]>;
   endedActivitiesById: Record<string, EventItem>;
-  addActivity: (activity: Activity) => void;
-  updateActivity: (activityId: string, updates: Partial<Activity>) => void;
-  approveParticipant: (activityId: string, participantId: string) => boolean;
-  rejectParticipant: (activityId: string, participantId: string) => void;
-  removeParticipant: (activityId: string, participantId: string) => void;
-  joinEvent: (eventId: string) => void;
-  requestToJoinEvent: (eventId: string) => void;
-  leaveActivity: (eventId: string) => void;
-  endActivity: (event: EventItem) => void;
+  isLoadingActivities: boolean;
+  refreshActivities: () => Promise<void>;
+  addActivity: (activity: Activity) => Promise<MutationResponse>;
+  updateActivity: (activityId: string, updates: Partial<Activity>) => Promise<MutationResponse>;
+  approveParticipant: (activityId: string, participantId: string) => Promise<boolean>;
+  rejectParticipant: (activityId: string, participantId: string) => Promise<MutationResponse>;
+  removeParticipant: (activityId: string, participantId: string) => Promise<MutationResponse>;
+  joinEvent: (eventId: string) => Promise<MutationResponse>;
+  requestToJoinEvent: (eventId: string) => Promise<MutationResponse>;
+  leaveActivity: (eventId: string) => Promise<MutationResponse>;
+  endActivity: (event: EventItem) => Promise<MutationResponse>;
   sendMessage: (activityId: string, text: string) => void;
 };
 
 const ActivityStoreContext = createContext<ActivityStoreValue | null>(null);
 
 export function ActivityStoreProvider({ children }: { children: ReactNode }) {
-  const [createdActivities, setCreatedActivities] = useState<Activity[]>([]);
-  const [participationByEventId, setParticipationByEventId] = useState<
-    Record<string, Exclude<ParticipationStatus, 'hosting'>>
-  >({});
+  const { user } = useAuth();
+  const currentUserId = user?.id ?? '';
+  const currentUserProfile = useMemo(() => mapUserToProfileSummary(user), [user]);
+  const currentUserParticipant = useMemo(
+    () =>
+      currentUserProfile
+        ? {
+            id: currentUserProfile.id,
+            userId: currentUserProfile.id,
+            name: currentUserProfile.fullName,
+            initials: currentUserProfile.initials,
+            rating: currentUserProfile.rating,
+          }
+        : null,
+    [currentUserProfile]
+  );
+  const [activityRecords, setActivityRecords] = useState<ActivityRecord[]>([]);
   const [messagesByActivityId, setMessagesByActivityId] = useState<Record<string, ActivityMessage[]>>(
     {}
   );
   const [endedActivitiesById, setEndedActivitiesById] = useState<Record<string, EventItem>>({});
+  const [isLoadingActivities, setIsLoadingActivities] = useState(true);
 
-  const addActivity = (activity: Activity) => {
-    setCreatedActivities((currentValue) => [activity, ...currentValue]);
+  const refreshActivities = async () => {
+    setIsLoadingActivities(true);
+    const { data, error } = await getActivities(currentUserId || undefined);
+
+    if (error) {
+      console.log('refreshActivities error', error);
+      setActivityRecords([]);
+      setIsLoadingActivities(false);
+      return;
+    }
+
+    setActivityRecords(data ?? []);
+    setIsLoadingActivities(false);
   };
 
-  const updateActivity = (activityId: string, updates: Partial<Activity>) => {
-    setCreatedActivities((currentValue) =>
-      currentValue.map((activity) =>
-        activity.id === activityId
-          ? {
-              ...activity,
-              ...updates,
-            }
-          : activity
-      )
-    );
-  };
+  useEffect(() => {
+    void refreshActivities();
+  }, [currentUserId]);
 
-  const approveParticipant = (activityId: string, participantId: string) => {
-    let wasApproved = false;
+  const createdActivities = useMemo(
+    () =>
+      activityRecords
+        .filter((activity) => activity.hostId === currentUserId)
+        .map(mapActivityRecordToManagedActivity),
+    [activityRecords, currentUserId]
+  );
 
-    setCreatedActivities((currentValue) =>
-      currentValue.map((activity) => {
-        if (activity.id !== activityId) {
-          return activity;
+  const browseEvents = useMemo(
+    () =>
+      activityRecords
+        .filter((activity) => activity.hostId !== currentUserId)
+        .map(mapActivityRecordToEventItem),
+    [activityRecords, currentUserId]
+  );
+
+  const participationByEventId = useMemo(
+    () =>
+      activityRecords.reduce<Record<string, Exclude<ParticipationStatus, 'hosting'>>>((acc, activity) => {
+        if (!currentUserId || activity.hostId === currentUserId || activity.currentUserStatus === 'none') {
+          return acc;
         }
 
-        if (activity.approvedParticipants.length >= activity.participantLimit) {
-          return activity;
-        }
+        acc[activity.id] = activity.currentUserStatus;
+        return acc;
+      }, {}),
+    [activityRecords, currentUserId]
+  );
 
-        const participant = activity.pendingParticipants.find((item) => item.id === participantId);
+  const addActivity = async (activity: Activity) => {
+    if (!currentUserId) {
+      return { error: new Error('You must be signed in to create an activity.') };
+    }
 
-        if (!participant) {
-          return activity;
-        }
+    const startsAt = buildCreatedActivityDateTime(activity);
+    const { error } = await createActivityService({
+      title: activity.title,
+      description: activity.description,
+      type: activity.type,
+      locationName: activity.location,
+      startsAt,
+      capacity: activity.participantLimit,
+      endsAt: null,
+      approvalMode: activity.approvalMode,
+      visibility: activity.visibility,
+      hostId: currentUserId,
+    });
 
-        wasApproved = true;
+    if (error) {
+      console.log('addActivity error', error);
+      return { error };
+    }
 
-        return {
-          ...activity,
-          approvedParticipants: [...activity.approvedParticipants, participant],
-          pendingParticipants: activity.pendingParticipants.filter((item) => item.id !== participantId),
-        };
-      })
-    );
-
-    return wasApproved;
+    await refreshActivities();
+    return { error: null };
   };
 
-  const rejectParticipant = (activityId: string, participantId: string) => {
-    setCreatedActivities((currentValue) =>
-      currentValue.map((activity) =>
-        activity.id === activityId
-          ? {
-              ...activity,
-              pendingParticipants: activity.pendingParticipants.filter((item) => item.id !== participantId),
-            }
-          : activity
-      )
-    );
+  const updateActivity = async (activityId: string, updates: Partial<Activity>) => {
+    const currentActivity = createdActivities.find((activity) => activity.id === activityId);
+
+    if (!currentActivity) {
+      return { error: new Error('Activity not found.') };
+    }
+
+    const mergedActivity = {
+      ...currentActivity,
+      ...updates,
+    };
+
+    const { error } = await updateActivityService(activityId, {
+      title: mergedActivity.title,
+      description: mergedActivity.description,
+      type: mergedActivity.type,
+      locationName: mergedActivity.location,
+      startsAt: buildCreatedActivityDateTime(mergedActivity),
+      endsAt: null,
+      capacity: mergedActivity.participantLimit,
+      approvalMode: mergedActivity.approvalMode,
+      visibility: mergedActivity.visibility,
+    });
+
+    if (error) {
+      console.log('updateActivity error', error);
+      return { error };
+    }
+
+    await refreshActivities();
+    return { error: null };
   };
 
-  const removeParticipant = (activityId: string, participantId: string) => {
-    setCreatedActivities((currentValue) =>
-      currentValue.map((activity) =>
-        activity.id === activityId
-          ? {
-              ...activity,
-              approvedParticipants: activity.approvedParticipants.filter((item) => item.id !== participantId),
-            }
-          : activity
-      )
-    );
+  const approveParticipant = async (activityId: string, participantId: string) => {
+    const activity = activityRecords.find((item) => item.id === activityId);
+    const participant = activity?.pendingParticipants.find((item) => item.id === participantId);
+
+    if (!activity || !participant) {
+      return false;
+    }
+
+    if (activity.approvedParticipants.length >= activity.participantLimit) {
+      return false;
+    }
+
+    const { error } = await approveParticipantService(activityId, participant.userId);
+
+    if (error) {
+      console.log('approveParticipant error', error);
+      return false;
+    }
+
+    await refreshActivities();
+    return true;
   };
 
-  const joinEvent = (eventId: string) => {
-    setParticipationByEventId((currentValue) => ({
-      ...currentValue,
-      [eventId]: 'joined',
-    }));
+  const rejectParticipant = async (activityId: string, participantId: string) => {
+    const participant = activityRecords
+      .find((item) => item.id === activityId)
+      ?.pendingParticipants.find((item) => item.id === participantId);
+
+    if (!participant) {
+      return { error: new Error('Participant not found.') };
+    }
+
+    const { error } = await rejectParticipantService(activityId, participant.userId);
+
+    if (error) {
+      console.log('rejectParticipant error', error);
+      return { error };
+    }
+
+    await refreshActivities();
+    return { error: null };
   };
 
-  const requestToJoinEvent = (eventId: string) => {
-    setParticipationByEventId((currentValue) => ({
-      ...currentValue,
-      [eventId]: 'pending',
-    }));
+  const removeParticipant = async (activityId: string, participantId: string) => {
+    const participant = activityRecords
+      .find((item) => item.id === activityId)
+      ?.approvedParticipants.find((item) => item.id === participantId);
+
+    if (!participant) {
+      return { error: new Error('Participant not found.') };
+    }
+
+    const { error } = await removeParticipantService(activityId, participant.userId);
+
+    if (error) {
+      console.log('removeParticipant error', error);
+      return { error };
+    }
+
+    await refreshActivities();
+    return { error: null };
   };
 
-  const leaveActivity = (eventId: string) => {
-    setParticipationByEventId((currentValue) => ({
-      ...currentValue,
-      [eventId]: 'none',
-    }));
+  const joinEvent = async (eventId: string) => {
+    if (!currentUserId) {
+      return { error: new Error('You must be signed in to join an activity.') };
+    }
+
+    const activity = activityRecords.find((item) => item.id === eventId);
+
+    if (!activity) {
+      return { error: new Error('Activity not found.') };
+    }
+
+    const { error } = await joinOrRequestActivity(eventId, currentUserId, activity.approvalMode);
+
+    if (error) {
+      console.log('joinEvent error', error);
+      return { error };
+    }
+
+    await refreshActivities();
+    return { error: null };
   };
 
-  const endActivity = (event: EventItem) => {
+  const requestToJoinEvent = async (eventId: string) => {
+    if (!currentUserId) {
+      return { error: new Error('You must be signed in to request an activity.') };
+    }
+
+    const activity = activityRecords.find((item) => item.id === eventId);
+
+    if (!activity) {
+      return { error: new Error('Activity not found.') };
+    }
+
+    const { error } = await joinOrRequestActivity(eventId, currentUserId, 'manual');
+
+    if (error) {
+      console.log('requestToJoinEvent error', error);
+      return { error };
+    }
+
+    await refreshActivities();
+    return { error: null };
+  };
+
+  const leaveActivity = async (eventId: string) => {
+    if (!currentUserId) {
+      return { error: new Error('You must be signed in to leave an activity.') };
+    }
+
+    const { error } = await leaveActivityService(eventId, currentUserId);
+
+    if (error) {
+      console.log('leaveActivity error', error);
+      return { error };
+    }
+
+    await refreshActivities();
+    return { error: null };
+  };
+
+  const endActivity = async (event: EventItem) => {
+    const { error } = await endActivityService(event.id);
+
+    if (error) {
+      console.log('endActivity error', error);
+      return { error };
+    }
+
     setEndedActivitiesById((currentValue) => ({
       ...currentValue,
       [event.id]: {
@@ -180,11 +364,8 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
         participantCount: 0,
       },
     }));
-    setCreatedActivities((currentValue) => currentValue.filter((activity) => activity.id !== event.id));
-    setParticipationByEventId((currentValue) => ({
-      ...currentValue,
-      [event.id]: 'none',
-    }));
+    await refreshActivities();
+    return { error: null };
   };
 
   const sendMessage = (activityId: string, text: string) => {
@@ -194,8 +375,6 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const currentUserProfile = getMockUserProfileById(CURRENT_USER_ID);
-
     setMessagesByActivityId((currentValue) => ({
       ...currentValue,
       [activityId]: [
@@ -203,9 +382,9 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
         {
           id: `${activityId}-${Date.now()}`,
           activityId,
-          senderId: CURRENT_USER_ID,
-          senderName: currentUserProfile?.name ?? 'You',
-          senderAvatar: currentUserProfile?.photoUrl ?? '',
+          senderId: currentUserId || 'guest',
+          senderName: currentUserProfile?.fullName ?? 'You',
+          senderAvatar: currentUserProfile?.avatarUrl ?? '',
           text: trimmedText,
           createdAt: new Date().toISOString(),
         },
@@ -216,11 +395,15 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
   return (
     <ActivityStoreContext.Provider
       value={{
-        currentUserId: CURRENT_USER_ID,
+        currentUserId,
+        currentUserParticipant,
+        browseEvents,
         createdActivities,
         participationByEventId,
         messagesByActivityId,
         endedActivitiesById,
+        isLoadingActivities,
+        refreshActivities,
         addActivity,
         updateActivity,
         approveParticipant,
@@ -253,39 +436,39 @@ export function mapActivityToEventItem(activity: Activity): EventItem {
     title: activity.title,
     dateTimeIso: buildCreatedActivityDateTime(activity),
     category: activity.type,
-    activityType: formatActivityType(activity.type),
+    activityType: activity.type,
     time: formatActivitySchedule(activity),
     dateLabel: formatDateLabel(new Date(activity.date)),
     timeLabel: formatTimeLabel(new Date(activity.time)),
     location: activity.location,
     description: activity.description,
     notes: activity.description,
-    hostId: CURRENT_USER_ID,
+    hostId: activity.hostId ?? '',
     hostName: activity.hostName,
     hostInitials: activity.hostInitials,
-    hostBio: 'Trusted Joinly host with a clear plan and a thoughtful group vibe.',
-    hostPhotoUrl:
-      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=900&q=80',
+    hostBio: activity.hostBio ?? 'Trusted Joinly host',
+    hostPhotoUrl: activity.hostPhotoUrl ?? '',
     participantCount: activity.approvedParticipants.length,
     participantLimit: activity.participantLimit,
     participants: activity.approvedParticipants.map((participant) => ({
       id: participant.id,
-      userId: participant.id,
+      userId: participant.userId ?? participant.id,
       name: participant.name,
       initials: participant.initials,
       rating: participant.rating,
     })),
     privacyType: mapPrivacyType(activity),
-    rating: 5,
-    accentColor: getActivityAccentColor(activity.type),
+    rating: activity.hostRating ?? 5,
+    accentColor: getAccentColor(activity.type),
   };
 }
 
 export function resolveEventParticipationStatus(
   event: Pick<EventItem, 'id' | 'hostId'>,
-  participationByEventId: Record<string, Exclude<ParticipationStatus, 'hosting'>> = {}
+  participationByEventId: Record<string, Exclude<ParticipationStatus, 'hosting'>> = {},
+  currentUserId = ''
 ): ParticipationStatus {
-  if (event.hostId === CURRENT_USER_ID) {
+  if (currentUserId && event.hostId === currentUserId) {
     return 'hosting';
   }
 
@@ -294,16 +477,18 @@ export function resolveEventParticipationStatus(
 
 export function syncEventParticipationForCurrentUser(
   event: EventItem,
-  participationByEventId: Record<string, Exclude<ParticipationStatus, 'hosting'>> = {}
+  participationByEventId: Record<string, Exclude<ParticipationStatus, 'hosting'>> = {},
+  currentUserId = '',
+  currentUserParticipant?: Participant | null
 ) {
-  const participationStatus = resolveEventParticipationStatus(event, participationByEventId);
+  const participationStatus = resolveEventParticipationStatus(event, participationByEventId, currentUserId);
 
-  if (participationStatus === 'hosting') {
+  if (participationStatus === 'hosting' || !currentUserId) {
     return event;
   }
 
   const participantsWithoutCurrentUser = event.participants.filter(
-    (participant) => participant.userId !== CURRENT_USER_ID
+    (participant) => participant.userId !== currentUserId
   );
 
   if (participationStatus !== 'joined') {
@@ -314,20 +499,20 @@ export function syncEventParticipationForCurrentUser(
     };
   }
 
-  const currentUserProfile = getMockUserProfileById(CURRENT_USER_ID);
-  const currentUserParticipant = {
-    id: `${event.id}-current-user`,
-    userId: CURRENT_USER_ID,
-    name: currentUserProfile?.name ?? 'You',
-    initials: currentUserProfile?.initials ?? 'YO',
-    rating: currentUserProfile?.rating ?? 4.5,
-  };
-
-  if (participantsWithoutCurrentUser.length !== event.participants.length) {
+  if (participantsWithoutCurrentUser.length !== event.participants.length || !currentUserParticipant) {
     return event;
   }
 
-  const nextParticipants = [...participantsWithoutCurrentUser, currentUserParticipant];
+  const nextParticipants = [
+    ...participantsWithoutCurrentUser,
+    {
+      id: `${event.id}-${currentUserId}`,
+      userId: currentUserId,
+      name: currentUserParticipant.name,
+      initials: currentUserParticipant.initials,
+      rating: currentUserParticipant.rating,
+    },
+  ];
 
   return {
     ...event,
@@ -355,7 +540,7 @@ export function formatActivitySchedule(activity: Activity) {
   return `${formatDateLabel(new Date(activity.date))} • ${formatTimeLabel(new Date(activity.time))}`;
 }
 
-export function buildCreatedActivityDateTime(activity: Activity) {
+export function buildCreatedActivityDateTime(activity: Pick<Activity, 'date' | 'time'>) {
   const dateValue = new Date(activity.date);
   const timeValue = new Date(activity.time);
 
@@ -364,68 +549,92 @@ export function buildCreatedActivityDateTime(activity: Activity) {
   return dateValue.toISOString();
 }
 
-export function getActivityAccentColor(type: string) {
-  return getActivityCategoryByLabel(type).color;
-}
-
-export function buildMockParticipants(participantLimit: number) {
-  const approvedPool: Participant[] = [
-    { id: 'approved-1', name: 'Aylin Demir', initials: 'AD', rating: 4.9 },
-    { id: 'approved-2', name: 'Omar Kaya', initials: 'OK', rating: 4.8 },
-    { id: 'approved-3', name: 'Lena Hart', initials: 'LH', rating: 4.7 },
-  ];
-  const pendingPool: Participant[] = [
-    { id: 'pending-1', name: 'Noah Chen', initials: 'NC', rating: 4.8 },
-    { id: 'pending-2', name: 'Mina Ates', initials: 'MA', rating: 4.6 },
-    { id: 'pending-3', name: 'Theo Park', initials: 'TP', rating: 4.7 },
-  ];
-  const approvedCount = participantLimit <= 2 ? 1 : Math.min(2, participantLimit - 1);
-
+export function buildMockParticipants(_participantLimit?: number) {
   return {
-    approvedParticipants: approvedPool.slice(0, approvedCount).map((participant, index) => ({
-      ...participant,
-      id: `${participant.id}-${index + 1}-${participantLimit}`,
-    })),
-    pendingParticipants: pendingPool.slice(0, 2).map((participant, index) => ({
-      ...participant,
-      id: `${participant.id}-${index + 1}-${participantLimit}`,
-    })),
+    approvedParticipants: [],
+    pendingParticipants: [],
   };
 }
 
-function mapPrivacyType(activity: Activity): PrivacyType {
-  if (activity.visibility === 'private') {
-    return 'Private';
-  }
-
-  if (activity.approvalMode === 'approval') {
-    return 'Invite-only';
-  }
-
-  return 'Public';
+function mapActivityRecordToManagedActivity(activity: ActivityRecord): Activity {
+  return {
+    id: activity.id,
+    hostId: activity.hostId,
+    type: activity.category,
+    title: activity.title,
+    date: activity.startsAt,
+    time: activity.startsAt,
+    location: activity.location,
+    participantLimit: activity.participantLimit,
+    approvalMode: activity.approvalMode,
+    visibility: activity.visibility,
+    description: activity.description,
+    createdAt: activity.createdAt,
+    hostName: activity.host.fullName,
+    hostInitials: activity.host.initials,
+    hostBio: activity.host.bio,
+    hostPhotoUrl: activity.host.avatarUrl,
+    hostRating: activity.host.rating,
+    approvedParticipants: activity.approvedParticipants.map(mapRemoteParticipantToParticipant),
+    pendingParticipants: activity.pendingParticipants.map(mapRemoteParticipantToParticipant),
+  };
 }
 
-function formatActivityType(type: string) {
-  switch (type) {
-    case 'Coffee':
-      return 'Coffee Meetup';
-    case 'Food':
-      return 'Food Meetup';
-    case 'Run':
-      return 'Running Club';
-    case 'Walk':
-      return 'Walk';
-    case 'Reading':
-      return 'Reading Circle';
-    case 'Sport':
-      return 'Sports';
-    case 'Wellness':
-      return 'Wellness Session';
-    case 'Games':
-      return 'Game Night';
-    default:
-      return type;
+function mapActivityRecordToEventItem(activity: ActivityRecord): EventItem {
+  const eventDate = new Date(activity.startsAt);
+
+  return {
+    id: activity.id,
+    title: activity.title,
+    dateTimeIso: activity.startsAt,
+    category: activity.category,
+    activityType: activity.category,
+    time: `${formatDateLabel(eventDate)} • ${formatTimeLabel(eventDate)}`,
+    dateLabel: formatDateLabel(eventDate),
+    timeLabel: formatTimeLabel(eventDate),
+    location: activity.location,
+    description: activity.description,
+    notes: activity.description,
+    hostId: activity.hostId,
+    hostName: activity.host.fullName,
+    hostInitials: activity.host.initials,
+    hostBio: activity.host.bio,
+    hostPhotoUrl: activity.host.avatarUrl,
+    participantCount: activity.approvedParticipants.length,
+    participantLimit: activity.participantLimit,
+    participants: activity.approvedParticipants.map((participant) => ({
+      id: participant.id,
+      userId: participant.userId,
+      name: participant.profile.fullName,
+      initials: participant.profile.initials,
+      rating: participant.profile.rating,
+    })),
+    privacyType: mapPrivacyType(activity),
+    rating: activity.host.rating,
+    accentColor: getAccentColor(activity.category),
+  };
+}
+
+function mapRemoteParticipantToParticipant(participant: ActivityParticipant): Participant {
+  return {
+    id: participant.id,
+    userId: participant.userId,
+    name: participant.profile.fullName,
+    initials: participant.profile.initials,
+    rating: participant.profile.rating,
+  };
+}
+
+function mapPrivacyType(activity: Pick<ActivityRecord, 'approvalMode' | 'visibility'> | Activity) {
+  if (activity.visibility === 'private') {
+    return 'Private' satisfies PrivacyType;
   }
+
+  if (activity.approvalMode === 'manual') {
+    return 'Invite-only' satisfies PrivacyType;
+  }
+
+  return 'Public' satisfies PrivacyType;
 }
 
 function formatDateLabel(date: Date) {
@@ -443,3 +652,30 @@ function formatTimeLabel(date: Date) {
     hour12: false,
   }).format(date);
 }
+
+function mapUserToProfileSummary(user: { id: string; email?: string; user_metadata?: Record<string, unknown> } | null) {
+  if (!user) {
+    return null;
+  }
+
+  const metadataName = typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : '';
+  const emailName = user.email?.split('@')[0] ?? 'You';
+  const fullName = metadataName.trim() || emailName;
+
+  return {
+    id: user.id,
+    fullName,
+    initials: fullName
+      .split(' ')
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((value) => value[0]?.toUpperCase() ?? '')
+      .join('') || 'YO',
+    avatarUrl: '',
+    bio: 'Joinly member',
+    rating: 5,
+  } satisfies ProfileSummary;
+}
+
+export const getActivityAccentColor = getAccentColor;

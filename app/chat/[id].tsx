@@ -14,7 +14,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ChatInput } from '@/components/activity-chat/chat-input';
 import { MessageList } from '@/components/activity-chat/message-list';
-import { getFeaturedEventById } from '@/components/home/mock-data';
 import { ThemedText } from '@/components/themed-text';
 import {
   canAccessActivityChat,
@@ -29,8 +28,10 @@ import {
 export default function ActivityChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const {
+    browseEvents,
     createdActivities,
     currentUserId,
+    currentUserParticipant,
     endedActivitiesById,
     messagesByActivityId,
     participationByEventId,
@@ -56,15 +57,20 @@ export default function ActivityChatScreen() {
       return mapActivityToEventItem(createdActivity);
     }
 
-    return getFeaturedEventById(id);
-  }, [createdActivities, endedActivitiesById, id]);
+    return browseEvents.find((event) => event.id === id);
+  }, [browseEvents, createdActivities, endedActivitiesById, id]);
   const syncedActivity = activity
-    ? syncEventParticipationForCurrentUser(activity, participationByEventId)
+    ? syncEventParticipationForCurrentUser(
+        activity,
+        participationByEventId,
+        currentUserId,
+        currentUserParticipant
+      )
     : undefined;
   const isEnded = syncedActivity ? isActivityEnded(syncedActivity.id, endedActivitiesById) : false;
 
   const participationStatus = syncedActivity && !isEnded
-    ? resolveEventParticipationStatus(syncedActivity, participationByEventId)
+    ? resolveEventParticipationStatus(syncedActivity, participationByEventId, currentUserId)
     : 'none';
   const hasAccess = isEnded || canAccessActivityChat(participationStatus);
   const isPast = syncedActivity ? isActivityPast(syncedActivity.dateTimeIso) : false;

@@ -1,21 +1,28 @@
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useDeferredValue, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ActivityFilterChip } from '@/components/home/activity-filter-chip';
 import { EventCard } from '@/components/home/event-card';
 import { HomeHeader } from '@/components/home/home-header';
-import { activityFilters, featuredEvents } from '@/components/home/mock-data';
 import { AddActivityCard, MyActivityCard } from '@/components/home/my-activity-card';
 import { SearchBar } from '@/components/home/search-bar';
 import { ThemedText } from '@/components/themed-text';
+import { ACTIVITY_CATEGORIES } from '@/constants/activity-categories';
 import { resolveEventParticipationStatus, useActivityStore } from '@/store/activity-store';
 
 export default function HomeScreen() {
-  const { createdActivities, participationByEventId, joinEvent, requestToJoinEvent } =
-    useActivityStore();
+  const {
+    browseEvents,
+    createdActivities,
+    currentUserId,
+    isLoadingActivities,
+    participationByEventId,
+    joinEvent,
+    requestToJoinEvent,
+  } = useActivityStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -29,7 +36,7 @@ export default function HomeScreen() {
       activity.description,
     ])
   );
-  const filteredFeaturedEvents = featuredEvents.filter((event) =>
+  const filteredFeaturedEvents = browseEvents.filter((event) =>
     matchesCategory(event.category, selectedCategory) &&
     matchesSearchQuery(normalizedQuery, [
       event.title,
@@ -40,6 +47,14 @@ export default function HomeScreen() {
     ])
   );
   const hasResults = filteredCreatedActivities.length > 0 || filteredFeaturedEvents.length > 0;
+
+  const handleStatusAction = async (eventId: string, isPrivateActivity: boolean) => {
+    const { error } = isPrivateActivity ? await requestToJoinEvent(eventId) : await joinEvent(eventId);
+
+    if (error) {
+      Alert.alert('Action unavailable', error.message);
+    }
+  };
 
   return (
     <View style={styles.screen}>
@@ -97,7 +112,7 @@ export default function HomeScreen() {
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.chipsRow}>
-              {activityFilters.map((filter) => (
+              {ACTIVITY_CATEGORIES.map((filter) => (
                 <ActivityFilterChip
                   key={filter.id}
                   color={filter.color}
@@ -129,7 +144,8 @@ export default function HomeScreen() {
                   filteredFeaturedEvents.map((event) => {
                     const participationStatus = resolveEventParticipationStatus(
                       event,
-                      participationByEventId
+                      participationByEventId,
+                      currentUserId
                     );
 
                     return (
@@ -137,11 +153,9 @@ export default function HomeScreen() {
                         key={event.id}
                         event={event}
                         participationStatus={participationStatus}
-                        onStatusActionPress={() =>
-                          event.privacyType === 'Public'
-                            ? joinEvent(event.id)
-                            : requestToJoinEvent(event.id)
-                        }
+                        onStatusActionPress={() => {
+                          void handleStatusAction(event.id, event.privacyType !== 'Public');
+                        }}
                         onPress={() =>
                           router.push({
                             pathname: '/event/[id]',
@@ -154,10 +168,14 @@ export default function HomeScreen() {
                 ) : hasActiveSearch || selectedCategory ? (
                   <View style={styles.emptyStateCard}>
                     <ThemedText style={styles.emptyStateTitle}>
-                      {getEmptyStateTitle(selectedCategory, hasActiveSearch)}
+                      {isLoadingActivities
+                        ? 'Loading activities'
+                        : getEmptyStateTitle(selectedCategory, hasActiveSearch)}
                     </ThemedText>
                     <ThemedText style={styles.emptyStateBody}>
-                      {getEmptyStateBody(selectedCategory, hasActiveSearch)}
+                      {isLoadingActivities
+                        ? 'Pulling the latest active plans from Joinly.'
+                        : getEmptyStateBody(selectedCategory, hasActiveSearch)}
                     </ThemedText>
                   </View>
                 ) : null}
@@ -166,10 +184,14 @@ export default function HomeScreen() {
               <View style={styles.cardsColumn}>
                 <View style={styles.emptyStateCard}>
                   <ThemedText style={styles.emptyStateTitle}>
-                    {getEmptyStateTitle(selectedCategory, hasActiveSearch)}
+                    {isLoadingActivities
+                      ? 'Loading activities'
+                      : getEmptyStateTitle(selectedCategory, hasActiveSearch)}
                   </ThemedText>
                   <ThemedText style={styles.emptyStateBody}>
-                    {getEmptyStateBody(selectedCategory, hasActiveSearch)}
+                    {isLoadingActivities
+                      ? 'Pulling the latest active plans from Joinly.'
+                      : getEmptyStateBody(selectedCategory, hasActiveSearch)}
                   </ThemedText>
                 </View>
               </View>

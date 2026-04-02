@@ -1,3 +1,4 @@
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
@@ -38,7 +39,7 @@ export default function EditInterestsScreen() {
               <SelectablePill
                 color={category.color}
                 key={category.id}
-                icon={category.icon}
+                icon={category.icon as keyof typeof MaterialIcons.glyphMap}
                 isSelected={draftInterestIds.includes(category.label)}
                 label={category.label}
                 onPress={() => toggleInterest(category.label)}

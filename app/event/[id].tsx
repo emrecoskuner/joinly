@@ -2,17 +2,18 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState } from 'react';
 
 import { getActivityCategoryByLabel } from '@/constants/activity-categories';
-import { getFeaturedEventById } from '@/components/home/mock-data';
 import { ThemedText } from '@/components/themed-text';
 import {
+  buildCreatedActivityDateTime,
   canAccessActivityChat,
   isActivityEnded,
   isActivityPast,
+  mapActivityToEventItem,
   resolveEventParticipationStatus,
   syncEventParticipationForCurrentUser,
   useActivityStore,
@@ -21,8 +22,11 @@ import {
 
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const rawEvent = id ? getFeaturedEventById(id) : undefined;
   const {
+    browseEvents,
+    createdActivities,
+    currentUserId,
+    currentUserParticipant,
     endedActivitiesById,
     endActivity,
     participationByEventId,
@@ -31,11 +35,31 @@ export default function EventDetailScreen() {
     leaveActivity,
   } = useActivityStore();
   const [confirmAction, setConfirmAction] = useState<'leave' | 'end' | null>(null);
+  const rawEvent = id
+    ? browseEvents.find((event) => event.id === id) ??
+      (() => {
+        const hostedActivity = createdActivities.find((activity) => activity.id === id);
+
+        if (!hostedActivity) {
+          return undefined;
+        }
+
+        return {
+          ...mapActivityToEventItem(hostedActivity),
+          dateTimeIso: buildCreatedActivityDateTime(hostedActivity),
+        };
+      })()
+    : undefined;
   const endedEvent = id ? endedActivitiesById[id] : undefined;
   const event = endedEvent
     ? endedEvent
     : rawEvent
-      ? syncEventParticipationForCurrentUser(rawEvent, participationByEventId)
+      ? syncEventParticipationForCurrentUser(
+          rawEvent,
+          participationByEventId,
+          currentUserId,
+          currentUserParticipant
+        )
       : undefined;
 
   if (!event) {
@@ -46,7 +70,7 @@ export default function EventDetailScreen() {
           <View style={styles.emptyStateCard}>
             <ThemedText style={styles.emptyStateTitle}>Activity not found</ThemedText>
             <ThemedText style={styles.emptyStateBody}>
-              This activity could not be loaded from local mock data.
+              This activity could not be loaded from Joinly.
             </ThemedText>
           </View>
         </SafeAreaView>
@@ -58,7 +82,9 @@ export default function EventDetailScreen() {
   const accentColor = category.color;
   const isPrivateActivity = event.privacyType !== 'Public';
   const isEnded = isActivityEnded(event.id, endedActivitiesById);
-  const participationStatus = isEnded ? 'none' : resolveEventParticipationStatus(event, participationByEventId);
+  const participationStatus = isEnded
+    ? 'none'
+    : resolveEventParticipationStatus(event, participationByEventId, currentUserId);
   const statusCopy = getParticipationStateCopy(participationStatus);
   const hasChatAccess = !isEnded && canAccessActivityChat(participationStatus);
   const hasEnded = isEnded || isActivityPast(event.dateTimeIso);
@@ -109,10 +135,18 @@ export default function EventDetailScreen() {
                   const nextAction = confirmAction;
                   setConfirmAction(null);
                   if (nextAction === 'end') {
-                    endActivity(event);
+                    void endActivity(event).then(({ error }) => {
+                      if (error) {
+                        Alert.alert('Unable to end activity', error.message);
+                      }
+                    });
                     return;
                   }
-                  leaveActivity(event.id);
+                  void leaveActivity(event.id).then(({ error }) => {
+                    if (error) {
+                      Alert.alert('Unable to leave activity', error.message);
+                    }
+                  });
                 }}
                 style={({ pressed }) => [
                   styles.modalDangerAction,
@@ -131,9 +165,13 @@ export default function EventDetailScreen() {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.heroCard}>
             <View style={styles.heroHeader}>
-              <View style={[styles.categoryPill, { backgroundColor: accentColor }]}>
+                <View style={[styles.categoryPill, { backgroundColor: accentColor }]}>
                 {category ? (
-                  <MaterialIcons color="#FFFDFC" name={category.icon} size={14} />
+                  <MaterialIcons
+                    color="#FFFDFC"
+                    name={category.icon as keyof typeof MaterialIcons.glyphMap}
+                    size={14}
+                  />
                 ) : null}
                 <ThemedText style={styles.categoryPillText}>{event.category}</ThemedText>
               </View>
@@ -170,9 +208,15 @@ export default function EventDetailScreen() {
             ) : participationStatus === 'none' ? (
               <Pressable
                 accessibilityRole="button"
-                onPress={() =>
-                  isPrivateActivity ? requestToJoinEvent(event.id) : joinEvent(event.id)
-                }
+                onPress={() => {
+                  const action = isPrivateActivity ? requestToJoinEvent : joinEvent;
+
+                  void action(event.id).then(({ error }) => {
+                    if (error) {
+                      Alert.alert('Unable to update activity', error.message);
+                    }
+                  });
+                }}
                 style={({ pressed }) => [
                   styles.primaryAction,
                   pressed ? styles.buttonPressed : null,
@@ -650,6 +694,9 @@ const styles = StyleSheet.create({
   },
   buttonPressed: {
     opacity: 0.92,
+  },
+  cardPressed: {
+    opacity: 0.96,
   },
   section: {
     gap: 14,

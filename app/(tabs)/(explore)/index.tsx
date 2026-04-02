@@ -18,11 +18,17 @@ const SEGMENTS: { key: SegmentKey; label: string }[] = [
 ];
 
 export default function ActivitiesScreen() {
-  const { createdActivities, participationByEventId } = useActivityStore();
+  const { browseEvents, createdActivities, currentUserId, participationByEventId } = useActivityStore();
   const [activeSegment, setActiveSegment] = useState<SegmentKey>('upcoming');
   const items = useMemo(
-    () => getActivityHubItems(createdActivities ?? [], participationByEventId ?? {}),
-    [createdActivities, participationByEventId]
+    () =>
+      getActivityHubItems(
+        browseEvents ?? [],
+        createdActivities ?? [],
+        participationByEventId ?? {},
+        currentUserId
+      ),
+    [browseEvents, createdActivities, currentUserId, participationByEventId]
   );
   const filteredItems = getFilteredItems(items, activeSegment);
 

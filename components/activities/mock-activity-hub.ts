@@ -1,4 +1,4 @@
-import { allEvents } from '@/components/home/mock-data';
+import type { EventItem } from '@/components/home/types';
 import {
   buildCreatedActivityDateTime,
   type Activity,
@@ -21,11 +21,40 @@ export type ActivityHubItem = {
 };
 
 export function getActivityHubItems(
+  events: EventItem[] = [],
   createdActivities: Activity[] = [],
-  participationByEventId: Record<string, Exclude<ParticipationStatus, 'hosting'>> = {}
+  participationByEventId: Record<string, Exclude<ParticipationStatus, 'hosting'>> = {},
+  currentUserId = ''
 ) {
   const safeCreatedActivities = Array.isArray(createdActivities) ? createdActivities : [];
-  const safeEvents = Array.isArray(allEvents) ? allEvents : [];
+  const safeEvents = Array.isArray(events) ? events : [];
+  const joinedItems: ActivityHubItem[] = [];
+
+  safeEvents.forEach((event) => {
+    const participationStatus = resolveEventParticipationStatus(
+      event,
+      participationByEventId,
+      currentUserId
+    );
+
+    if (participationStatus === 'none') {
+      return;
+    }
+
+    joinedItems.push({
+      id: event.id,
+      title: event.title,
+      dateTimeIso: event.dateTimeIso,
+      timeLabel: `${event.dateLabel} • ${event.timeLabel}`,
+      shortLocation: event.location,
+      participationStatus,
+      isPast: new Date(event.dateTimeIso).getTime() < Date.now(),
+      participantCount: event.participantCount,
+      hostName: event.hostName,
+      hostInitials: event.hostInitials,
+      detailRoute: '/event/[id]',
+    });
+  });
 
   return [
     ...safeCreatedActivities.map((activity) => {
@@ -44,29 +73,7 @@ export function getActivityHubItems(
         detailRoute: '/activity/[id]' as const,
       };
     }),
-    ...safeEvents
-      .map((event) => {
-        const participationStatus = resolveEventParticipationStatus(event, participationByEventId);
-
-        if (participationStatus === 'none') {
-          return null;
-        }
-
-        return {
-          id: event.id,
-          title: event.title,
-          dateTimeIso: event.dateTimeIso,
-          timeLabel: `${event.dateLabel} • ${event.timeLabel}`,
-          shortLocation: event.location,
-          participationStatus,
-          isPast: new Date(event.dateTimeIso).getTime() < Date.now(),
-          participantCount: event.participantCount,
-          hostName: event.hostName,
-          hostInitials: event.hostInitials,
-          detailRoute: '/event/[id]' as const,
-        };
-      })
-      .filter((item): item is ActivityHubItem => item !== null),
+    ...joinedItems,
   ];
 }
 

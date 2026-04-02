@@ -1,7 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import DateTimePicker, {
   type DateTimePickerEvent,
-  type DateTimePickerMode,
 } from '@react-native-community/datetimepicker';
 import * as Linking from 'expo-linking';
 import { router } from 'expo-router';
@@ -30,11 +29,13 @@ import { ThemedText } from '@/components/themed-text';
 import type { Activity } from '@/store/activity-store';
 import { buildMockParticipants, useActivityStore } from '@/store/activity-store';
 
+type DateTimePickerMode = 'date' | 'time';
+
 export default function CreateActivityScreen() {
   const { addActivity } = useActivityStore();
   const [selectedType, setSelectedType] = useState(ACTIVITY_CATEGORIES[0].label);
   const [participantLimit, setParticipantLimit] = useState(4);
-  const [approvalMode, setApprovalMode] = useState<'auto' | 'approval'>('approval');
+  const [approvalMode, setApprovalMode] = useState<'auto' | 'manual'>('manual');
   const [visibility, setVisibility] = useState<'public' | 'private'>('public');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -42,6 +43,7 @@ export default function CreateActivityScreen() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<Date | null>(null);
   const [activePicker, setActivePicker] = useState<DateTimePickerMode | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const formattedDate = selectedDate ? formatDateLabel(selectedDate) : 'Select date';
   const formattedTime = selectedTime ? formatTimeLabel(selectedTime) : 'Select time';
@@ -49,7 +51,9 @@ export default function CreateActivityScreen() {
   const pickerValue = getPickerValue(activePicker, selectedDate, selectedTime);
 
   const openPicker = (mode: DateTimePickerMode) => {
-    setActivePicker((currentValue) => (currentValue === mode ? null : mode));
+    setActivePicker((currentValue: DateTimePickerMode | null) =>
+      currentValue === mode ? null : mode
+    );
   };
 
   const handlePickerChange = (event: DateTimePickerEvent, nextValue?: Date) => {
@@ -95,8 +99,9 @@ export default function CreateActivityScreen() {
   };
 
   const handleCreateActivity = () => {
-    const dateValue = selectedDate ?? getDefaultDateValue();
-    const timeValue = selectedTime ?? getDefaultTimeValue();
+    const fallbackStartAt = getFallbackStartAt();
+    const dateValue = selectedDate ?? fallbackStartAt;
+    const timeValue = selectedTime ?? fallbackStartAt;
     const mockParticipants = buildMockParticipants(participantLimit);
     const activity: Activity = {
       id: `activity-${Date.now()}`,
@@ -116,8 +121,30 @@ export default function CreateActivityScreen() {
       pendingParticipants: mockParticipants.pendingParticipants,
     };
 
-    addActivity(activity);
-    router.replace('/(tabs)/(home)');
+    console.log('CreateActivity screen payload', {
+      title: activity.title,
+      description: activity.description,
+      type: activity.type,
+      location_name: activity.location,
+      starts_at: buildStartsAtPreview(dateValue, timeValue),
+      ends_at: null,
+      capacity: activity.participantLimit,
+      visibility: activity.visibility,
+      approval_mode: activity.approvalMode,
+    });
+
+    setIsSubmitting(true);
+    void addActivity(activity).then(({ error }) => {
+      setIsSubmitting(false);
+
+      if (error) {
+        console.log('CreateActivity screen error', error);
+        Alert.alert('Unable to create activity', error.message);
+        return;
+      }
+
+      router.replace('/(tabs)/(home)');
+    });
   };
 
   return (
@@ -157,7 +184,7 @@ export default function CreateActivityScreen() {
                     <SelectablePill
                       color={item.color}
                       key={item.label}
-                      icon={item.icon}
+                      icon={item.icon as keyof typeof MaterialIcons.glyphMap}
                       isSelected={selectedType === item.label}
                       label={item.label}
                       onPress={() => setSelectedType(item.label)}
@@ -300,8 +327,8 @@ export default function CreateActivityScreen() {
                     badge="Safer"
                     description="Review requests before someone joins your activity."
                     icon="verified-user"
-                    isSelected={approvalMode === 'approval'}
-                    onPress={() => setApprovalMode('approval')}
+                    isSelected={approvalMode === 'manual'}
+                    onPress={() => setApprovalMode('manual')}
                     title="Host Approval"
                   />
                 </View>
@@ -354,12 +381,16 @@ export default function CreateActivityScreen() {
             <View style={styles.footer}>
               <Pressable
                 accessibilityRole="button"
+                disabled={isSubmitting}
                 onPress={handleCreateActivity}
                 style={({ pressed }) => [
                   styles.ctaButton,
                   pressed ? styles.ctaButtonPressed : null,
+                  isSubmitting ? styles.ctaButtonDisabled : null,
                 ]}>
-                <ThemedText style={styles.ctaText}>Create Activity</ThemedText>
+                <ThemedText style={styles.ctaText}>
+                  {isSubmitting ? 'Creating...' : 'Create Activity'}
+                </ThemedText>
                 <MaterialIcons color="#FFFDFC" name="arrow-forward" size={18} />
               </Pressable>
             </View>
@@ -415,6 +446,18 @@ function getDefaultTimeValue() {
   const defaultTime = new Date();
   defaultTime.setHours(18, 30, 0, 0);
   return defaultTime;
+}
+
+function getFallbackStartAt() {
+  const fallbackDate = new Date(Date.now() + 60 * 60 * 1000);
+  fallbackDate.setSeconds(0, 0);
+  return fallbackDate;
+}
+
+function buildStartsAtPreview(dateValue: Date, timeValue: Date) {
+  const nextDate = new Date(dateValue);
+  nextDate.setHours(timeValue.getHours(), timeValue.getMinutes(), 0, 0);
+  return nextDate.toISOString();
 }
 
 function buildMapUrls(query: string) {
@@ -761,6 +804,9 @@ const styles = StyleSheet.create({
   },
   ctaButtonPressed: {
     opacity: 0.94,
+  },
+  ctaButtonDisabled: {
+    opacity: 0.72,
   },
   ctaText: {
     color: '#FFFDFC',

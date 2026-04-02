@@ -82,7 +82,11 @@ export default function UserProfileScreen() {
                     styles.tagChip,
                     { backgroundColor: `${tag.color}14`, borderColor: `${tag.color}38` },
                   ]}>
-                  <MaterialIcons color={tag.color} name={tag.icon} size={16} />
+                  <MaterialIcons
+                    color={tag.color}
+                    name={tag.icon as keyof typeof MaterialIcons.glyphMap}
+                    size={16}
+                  />
                   <ThemedText style={[styles.tagText, { color: tag.color }]}>{tag.label}</ThemedText>
                 </View>
               ))}

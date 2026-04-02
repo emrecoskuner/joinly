@@ -5,9 +5,6 @@ import { StackBackButton } from '@/components/navigation/stack-back-button';
 export const secondaryStackScreenOptions: NativeStackNavigationOptions = {
   headerBackVisible: false,
   headerLeft: () => <StackBackButton />,
-  headerLeftContainerStyle: {
-    paddingLeft: 20,
-  },
   headerShadowVisible: false,
   headerTitle: '',
   headerStyle: {

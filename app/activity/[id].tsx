@@ -1,8 +1,8 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import DateTimePicker, {
   type DateTimePickerEvent,
-  type DateTimePickerMode,
 } from '@react-native-community/datetimepicker';
+import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
@@ -27,13 +27,15 @@ import {
   SelectablePill,
 } from '@/components/create/create-form-ui';
 import { ThemedText } from '@/components/themed-text';
-import type { ApprovalMode, Visibility } from '@/store/activity-store';
 import {
   buildCreatedActivityDateTime,
   isActivityPast,
   mapActivityToEventItem,
   useActivityStore,
 } from '@/store/activity-store';
+import type { ApprovalMode, Visibility } from '@/services/activities';
+
+type DateTimePickerMode = 'date' | 'time';
 
 const PARTICIPANT_LIMITS = [2, 3, 4, 5, 6, 8, 10];
 
@@ -53,7 +55,7 @@ export default function ActivityManagementScreen() {
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
   const [participantLimit, setParticipantLimit] = useState(4);
-  const [approvalMode, setApprovalMode] = useState<ApprovalMode>('approval');
+  const [approvalMode, setApprovalMode] = useState<ApprovalMode>('manual');
   const [visibility, setVisibility] = useState<Visibility>('public');
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<Date | null>(null);
@@ -121,7 +123,7 @@ export default function ActivityManagementScreen() {
       return;
     }
 
-    updateActivity(activity.id, {
+    void updateActivity(activity.id, {
       title: title.trim() || `${activity.type} Meetup`,
       description: description.trim() || 'New activity created on Joinly.',
       location: location.trim() || 'Location TBD',
@@ -130,9 +132,15 @@ export default function ActivityManagementScreen() {
       visibility,
       date: nextDate.toISOString(),
       time: nextTime.toISOString(),
+    }).then(({ error }) => {
+      if (error) {
+        Alert.alert('Unable to save activity', error.message);
+        return;
+      }
+
+      setActivePicker(null);
+      setIsEditing(false);
     });
-    setActivePicker(null);
-    setIsEditing(false);
   };
 
   const handlePickerChange = (event: DateTimePickerEvent, nextValue?: Date) => {
@@ -155,14 +163,14 @@ export default function ActivityManagementScreen() {
   };
 
   const handleApprove = (participantId: string) => {
-    const wasApproved = approveParticipant(activity.id, participantId);
-
-    if (!wasApproved) {
-      Alert.alert(
-        'No spots left',
-        'This activity is already full. Remove a participant or increase the limit before approving someone else.'
-      );
-    }
+    void approveParticipant(activity.id, participantId).then((wasApproved) => {
+      if (!wasApproved) {
+        Alert.alert(
+          'No spots left',
+          'This activity is already full. Remove a participant or increase the limit before approving someone else.'
+        );
+      }
+    });
   };
 
   return (
@@ -199,8 +207,14 @@ export default function ActivityManagementScreen() {
                 accessibilityRole="button"
                 onPress={() => {
                   setIsEndConfirmVisible(false);
-                  endActivity(mapActivityToEventItem(activity));
-                  router.replace('/(tabs)/(explore)');
+                  void endActivity(mapActivityToEventItem(activity)).then(({ error }) => {
+                    if (error) {
+                      Alert.alert('Unable to end activity', error.message);
+                      return;
+                    }
+
+                    router.replace('/(tabs)/(explore)');
+                  });
                 }}
                 style={({ pressed }) => [
                   styles.modalDangerAction,
@@ -381,17 +395,17 @@ export default function ActivityManagementScreen() {
                 <FormSection title="Approval">
                   <View style={styles.optionColumn}>
                     <OptionCard
-                      description="Anyone who fits the vibe can join instantly."
-                      icon="bolt"
-                      isSelected={approvalMode === 'auto'}
-                      onPress={() => setApprovalMode('auto')}
-                      title="Auto Accept"
+                    description="Anyone who fits the vibe can join instantly."
+                    icon="bolt"
+                    isSelected={approvalMode === 'auto'}
+                    onPress={() => setApprovalMode('auto')}
+                    title="Auto Accept"
                     />
                     <OptionCard
                       description="Review requests before someone joins your activity."
                       icon="verified-user"
-                      isSelected={approvalMode === 'approval'}
-                      onPress={() => setApprovalMode('approval')}
+                      isSelected={approvalMode === 'manual'}
+                      onPress={() => setApprovalMode('manual')}
                       title="Host Approval"
                     />
                   </View>
@@ -442,7 +456,7 @@ export default function ActivityManagementScreen() {
                   <SummaryRow
                     icon="verified-user"
                     label="Approval mode"
-                    value={activity.approvalMode === 'approval' ? 'Host Approval' : 'Auto Accept'}
+                    value={activity.approvalMode === 'manual' ? 'Host Approval' : 'Auto Accept'}
                   />
                   <SummaryRow
                     icon={activity.visibility === 'public' ? 'public' : 'lock'}
@@ -460,7 +474,58 @@ export default function ActivityManagementScreen() {
 
             <View style={styles.sectionStack}>
               <View style={styles.sectionHeader}>
-                <ThemedText style={styles.sectionTitle}>Approved Participants</ThemedText>
+                <ThemedText style={styles.sectionTitle}>Host</ThemedText>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                disabled={!activity.hostId}
+                onPress={() => {
+                  if (!activity.hostId) {
+                    return;
+                  }
+
+                  router.push({
+                    pathname: '/user/[id]',
+                    params: { id: activity.hostId },
+                  });
+                }}
+                style={({ pressed }) => [
+                  styles.hostCard,
+                  pressed && activity.hostId ? styles.actionPressed : null,
+                ]}>
+                {activity.hostPhotoUrl ? (
+                  <Image
+                    contentFit="cover"
+                    source={{ uri: activity.hostPhotoUrl }}
+                    style={styles.hostPhoto}
+                  />
+                ) : (
+                  <View style={styles.hostAvatarFallback}>
+                    <ThemedText style={styles.hostAvatarFallbackText}>
+                      {activity.hostInitials}
+                    </ThemedText>
+                  </View>
+                )}
+                <View style={styles.hostCopy}>
+                  <View style={styles.hostHeader}>
+                    <ThemedText style={styles.hostName}>{activity.hostName}</ThemedText>
+                    <View style={styles.hostRatingPill}>
+                      <MaterialIcons color="#8B6A3D" name="star" size={14} />
+                      <ThemedText style={styles.hostRatingText}>
+                        {(activity.hostRating ?? 5).toFixed(1)}
+                      </ThemedText>
+                    </View>
+                  </View>
+                  <ThemedText style={styles.hostBio}>
+                    {activity.hostBio?.trim() || 'Trusted Joinly host'}
+                  </ThemedText>
+                </View>
+              </Pressable>
+            </View>
+
+            <View style={styles.sectionStack}>
+              <View style={styles.sectionHeader}>
+                <ThemedText style={styles.sectionTitle}>Participants</ThemedText>
                 <ThemedText style={styles.sectionHint}>{approvedCount} confirmed</ThemedText>
               </View>
               {activity.approvedParticipants.length > 0 ? (
@@ -470,12 +535,18 @@ export default function ActivityManagementScreen() {
                       key={participant.id}
                       participant={participant}
                       primaryActionLabel="Remove"
-                      onPrimaryAction={() => removeParticipant(activity.id, participant.id)}
+                      onPrimaryAction={() => {
+                        void removeParticipant(activity.id, participant.id).then(({ error }) => {
+                          if (error) {
+                            Alert.alert('Unable to remove participant', error.message);
+                          }
+                        });
+                      }}
                     />
                   ))}
                 </View>
               ) : (
-                <HelperCard body="No one has been approved yet. Approve pending requests to fill this activity." />
+                <HelperCard body="No participants yet. Approve pending requests to fill this activity." />
               )}
             </View>
 
@@ -496,7 +567,13 @@ export default function ActivityManagementScreen() {
                       primaryActionLabel="Approve"
                       secondaryActionLabel="Reject"
                       onPrimaryAction={() => handleApprove(participant.id)}
-                      onSecondaryAction={() => rejectParticipant(activity.id, participant.id)}
+                      onSecondaryAction={() => {
+                        void rejectParticipant(activity.id, participant.id).then(({ error }) => {
+                          if (error) {
+                            Alert.alert('Unable to reject request', error.message);
+                          }
+                        });
+                      }}
                     />
                   ))}
                 </View>
@@ -880,6 +957,73 @@ const styles = StyleSheet.create({
     color: '#5E584F',
     fontSize: 15,
     lineHeight: 22,
+  },
+  hostCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    padding: 18,
+    borderRadius: 24,
+    backgroundColor: '#FFFDFC',
+    borderWidth: 1,
+    borderColor: '#EFE4D6',
+  },
+  hostPhoto: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: '#F2E7D8',
+  },
+  hostAvatarFallback: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EADCC7',
+  },
+  hostAvatarFallbackText: {
+    color: '#5F4A33',
+    fontSize: 20,
+    lineHeight: 24,
+    fontWeight: '800',
+  },
+  hostCopy: {
+    flex: 1,
+    gap: 8,
+  },
+  hostHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  hostName: {
+    flex: 1,
+    color: '#171411',
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: '700',
+  },
+  hostRatingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#F6ECDD',
+  },
+  hostRatingText: {
+    color: '#7A5F38',
+    fontSize: 13,
+    lineHeight: 16,
+    fontWeight: '700',
+  },
+  hostBio: {
+    color: '#665D53',
+    fontSize: 14,
+    lineHeight: 20,
   },
   helperCard: {
     padding: 18,
