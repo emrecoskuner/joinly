@@ -8,8 +8,8 @@ import { ThemedText } from '@/components/themed-text';
 import { secondaryStackScreenOptions } from '@/components/navigation/secondary-stack-screen-options';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { ProfileStoreProvider, useProfileStore } from '@/store/profile-store';
 import { ActivityStoreProvider } from '@/store/activity-store';
-import { ProfileStoreProvider } from '@/store/profile-store';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -20,25 +20,27 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <ActivityStoreProvider>
-        <ProfileStoreProvider>
+      <ProfileStoreProvider>
+        <ActivityStoreProvider>
           <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
             <ProtectedNavigator />
             <StatusBar style="auto" />
           </ThemeProvider>
-        </ProfileStoreProvider>
-      </ActivityStoreProvider>
+        </ActivityStoreProvider>
+      </ProfileStoreProvider>
     </AuthProvider>
   );
 }
 
 function ProtectedNavigator() {
   const { loading, session } = useAuth();
+  const { loading: profileLoading, isProfileComplete } = useProfileStore();
   const segments = useSegments();
   const firstSegment = segments[0];
   const isAuthRoute = firstSegment === 'sign-in' || firstSegment === 'sign-up';
+  const isCompleteProfileRoute = firstSegment === 'complete-profile';
 
-  if (loading) {
+  if (loading || (session && profileLoading)) {
     return (
       <View style={styles.loadingScreen}>
         <ActivityIndicator color="#5B4630" size="large" />
@@ -60,18 +62,32 @@ function ProtectedNavigator() {
     );
   }
 
-  if (isAuthRoute) {
+  if (!isProfileComplete) {
+    if (!isCompleteProfileRoute) {
+      return <Redirect href="/complete-profile" />;
+    }
+
+    return (
+      <Stack screenOptions={secondaryStackScreenOptions}>
+        <Stack.Screen name="complete-profile" options={{ headerShown: false }} />
+      </Stack>
+    );
+  }
+
+  if (isAuthRoute || isCompleteProfileRoute) {
     return <Redirect href="/(tabs)/(home)" />;
   }
 
   return (
     <Stack screenOptions={secondaryStackScreenOptions}>
+      <Stack.Screen name="complete-profile" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="create" options={{ presentation: 'card' }} />
       <Stack.Screen name="activity/[id]" options={{ presentation: 'card' }} />
       <Stack.Screen name="event/[id]" options={{ presentation: 'card' }} />
       <Stack.Screen name="chat/[id]" options={{ presentation: 'card' }} />
       <Stack.Screen name="user/[id]" options={{ presentation: 'card' }} />
+      <Stack.Screen name="profile/edit" options={{ presentation: 'card' }} />
       <Stack.Screen name="profile/edit-about" options={{ presentation: 'card' }} />
       <Stack.Screen name="profile/edit-interests" options={{ presentation: 'card' }} />
       <Stack.Screen name="profile/activities/[kind]" options={{ presentation: 'card' }} />

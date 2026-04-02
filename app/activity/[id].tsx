@@ -517,7 +517,7 @@ export default function ActivityManagementScreen() {
                     </View>
                   </View>
                   <ThemedText style={styles.hostBio}>
-                    {activity.hostBio?.trim() || 'Trusted Joinly host'}
+                    {activity.hostBio?.trim() || 'No bio yet'}
                   </ThemedText>
                 </View>
               </Pressable>
@@ -533,6 +533,16 @@ export default function ActivityManagementScreen() {
                   {activity.approvedParticipants.map((participant) => (
                     <ParticipantRow
                       key={participant.id}
+                      onPress={() => {
+                        if (!participant.userId) {
+                          return;
+                        }
+
+                        router.push({
+                          pathname: '/user/[id]',
+                          params: { id: participant.userId },
+                        });
+                      }}
                       participant={participant}
                       primaryActionLabel="Remove"
                       onPrimaryAction={() => {
@@ -563,6 +573,16 @@ export default function ActivityManagementScreen() {
                   {activity.pendingParticipants.map((participant) => (
                     <ParticipantRow
                       key={participant.id}
+                      onPress={() => {
+                        if (!participant.userId) {
+                          return;
+                        }
+
+                        router.push({
+                          pathname: '/user/[id]',
+                          params: { id: participant.userId },
+                        });
+                      }}
                       participant={participant}
                       primaryActionLabel="Approve"
                       secondaryActionLabel="Reject"

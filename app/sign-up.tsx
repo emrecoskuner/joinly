@@ -75,7 +75,7 @@ export default function SignUpScreen() {
                   autoCapitalize="words"
                   autoComplete="name"
                   onChangeText={setFullName}
-                  placeholder="Maya Ceylan"
+                  placeholder="Full name"
                   placeholderTextColor="#8A8379"
                   style={styles.input}
                   value={fullName}

@@ -12,6 +12,8 @@ import { SearchBar } from '@/components/home/search-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ACTIVITY_CATEGORIES } from '@/constants/activity-categories';
 import { resolveEventParticipationStatus, useActivityStore } from '@/store/activity-store';
+import { useProfileStore } from '@/store/profile-store';
+import { formatProfileHandle } from '@/services/profiles';
 
 export default function HomeScreen() {
   const {
@@ -23,6 +25,7 @@ export default function HomeScreen() {
     joinEvent,
     requestToJoinEvent,
   } = useActivityStore();
+  const { profile } = useProfileStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -68,7 +71,11 @@ export default function HomeScreen() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
           bounces={false}>
-          <HomeHeader greeting="Good morning," userName="Maya" location="Kadikoy, Istanbul" />
+          <HomeHeader
+            greeting="Good morning,"
+            userName={profile?.fullName.split(' ')[0] || 'New user'}
+            location={profile?.occupation || formatProfileHandle(profile?.username ?? 'newuser')}
+          />
 
           <SearchBar
             onChangeText={setSearchQuery}

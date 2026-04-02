@@ -2,16 +2,50 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ACTIVITY_CATEGORIES } from '@/constants/activity-categories';
-import { getMockUserProfileById } from '@/components/profile/mock-user-profiles';
 import { ThemedText } from '@/components/themed-text';
+import { formatProfileHandle, formatProfileShortInfo, getProfileById, type ProfileRecord } from '@/services/profiles';
 
 export default function UserProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const profile = id ? getMockUserProfileById(id) : undefined;
+  const [profile, setProfile] = useState<ProfileRecord | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!id) {
+      setProfile(null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    void getProfileById(id).then(({ data, error }) => {
+      if (error) {
+        console.log('UserProfileScreen error', error);
+      }
+
+      setProfile(data);
+      setLoading(false);
+    });
+  }, [id]);
+
+  if (loading) {
+    return (
+      <View style={styles.screen}>
+        <StatusBar style="dark" />
+        <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safeArea}>
+          <View style={styles.emptyStateCard}>
+            <ThemedText style={styles.emptyStateTitle}>Loading profile</ThemedText>
+            <ThemedText style={styles.emptyStateBody}>Fetching the latest profile data.</ThemedText>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
 
   if (!profile) {
     return (
@@ -21,7 +55,7 @@ export default function UserProfileScreen() {
           <View style={styles.emptyStateCard}>
             <ThemedText style={styles.emptyStateTitle}>Profile not found</ThemedText>
             <ThemedText style={styles.emptyStateBody}>
-              This person is not available in the current mock data.
+              This person does not have a visible profile right now.
             </ThemedText>
           </View>
         </SafeAreaView>
@@ -30,7 +64,7 @@ export default function UserProfileScreen() {
   }
 
   const interestTags = ACTIVITY_CATEGORIES.filter((category) =>
-    profile.interestLabels.includes(category.label)
+    profile.interests.includes(category.label)
   );
 
   return (
@@ -45,22 +79,30 @@ export default function UserProfileScreen() {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.heroCard}>
             <View style={styles.photoColumn}>
-              <Image contentFit="cover" source={{ uri: profile.photoUrl }} style={styles.photo} />
+              {profile.avatarUrl ? (
+                <Image contentFit="cover" source={{ uri: profile.avatarUrl }} style={styles.photo} />
+              ) : (
+                <View style={styles.photoFallback}>
+                  <ThemedText style={styles.photoFallbackText}>{profile.initials}</ThemedText>
+                </View>
+              )}
               <View style={styles.ratingPill}>
                 <MaterialIcons color="#D89E35" name="star" size={15} />
-                <ThemedText style={styles.ratingText}>{profile.rating.toFixed(1)}</ThemedText>
+                <ThemedText style={styles.ratingText}>{profile.ratingAvg.toFixed(1)}</ThemedText>
               </View>
             </View>
 
             <View style={styles.identityBlock}>
               <View style={styles.nameRow}>
-                <ThemedText style={styles.name}>{profile.name}</ThemedText>
-                <ThemedText style={styles.shortInfo}>{profile.shortInfo}</ThemedText>
+                <ThemedText style={styles.name}>{profile.fullName}</ThemedText>
+                <ThemedText style={styles.shortInfo}>{formatProfileShortInfo(profile)}</ThemedText>
+                <ThemedText style={styles.handle}>{formatProfileHandle(profile.username)}</ThemedText>
               </View>
 
               <View style={styles.statsRow}>
                 <MiniStat label="Hosted" value={`${profile.hostedCount}`} />
                 <MiniStat label="Joined" value={`${profile.joinedCount}`} />
+                <MiniStat label="Reviews" value={`${profile.ratingCount}`} />
               </View>
             </View>
           </View>
@@ -74,50 +116,39 @@ export default function UserProfileScreen() {
 
           <View style={styles.section}>
             <ThemedText style={styles.sectionTitle}>Interests</ThemedText>
-            <View style={styles.tagsWrap}>
-              {interestTags.map((tag) => (
-                <View
-                  key={tag.id}
-                  style={[
-                    styles.tagChip,
-                    { backgroundColor: `${tag.color}14`, borderColor: `${tag.color}38` },
-                  ]}>
-                  <MaterialIcons
-                    color={tag.color}
-                    name={tag.icon as keyof typeof MaterialIcons.glyphMap}
-                    size={16}
-                  />
-                  <ThemedText style={[styles.tagText, { color: tag.color }]}>{tag.label}</ThemedText>
-                </View>
-              ))}
-            </View>
+            {interestTags.length > 0 ? (
+              <View style={styles.tagsWrap}>
+                {interestTags.map((tag) => (
+                  <View
+                    key={tag.id}
+                    style={[
+                      styles.tagChip,
+                      { backgroundColor: `${tag.color}14`, borderColor: `${tag.color}38` },
+                    ]}>
+                    <MaterialIcons
+                      color={tag.color}
+                      name={tag.icon as keyof typeof MaterialIcons.glyphMap}
+                      size={16}
+                    />
+                    <ThemedText style={[styles.tagText, { color: tag.color }]}>{tag.label}</ThemedText>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.aboutCard}>
+                <ThemedText style={styles.aboutText}>No interests shared yet.</ThemedText>
+              </View>
+            )}
           </View>
 
           <View style={styles.section}>
-            <ThemedText style={styles.sectionTitle}>Comments</ThemedText>
+            <ThemedText style={styles.sectionTitle}>Trust Feedback</ThemedText>
             <View style={styles.commentsCard}>
-              {profile.comments.length > 0 ? (
-                profile.comments.map((comment) => (
-                  <View key={comment.id} style={styles.commentItem}>
-                    <View style={styles.commentHeader}>
-                      <ThemedText style={styles.commentName}>{comment.reviewerName}</ThemedText>
-                      <View style={styles.commentRating}>
-                        <MaterialIcons color="#D89E35" name="star" size={14} />
-                        <ThemedText style={styles.commentRatingText}>
-                          {comment.rating.toFixed(1)}
-                        </ThemedText>
-                      </View>
-                    </View>
-                    <ThemedText style={styles.commentText}>{comment.text}</ThemedText>
-                  </View>
-                ))
-              ) : (
-                <View style={styles.commentItem}>
-                  <ThemedText style={styles.commentText}>
-                    No comments yet. Early trust signals will appear here as people attend activities together.
-                  </ThemedText>
-                </View>
-              )}
+              <View style={styles.commentItem}>
+                <ThemedText style={styles.commentText}>
+                  Written comments are not available in the current schema yet. Rating totals above come from the live profile record.
+                </ThemedText>
+              </View>
             </View>
           </View>
         </ScrollView>
@@ -136,14 +167,8 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#FFF8F0',
-  },
-  background: {
-    ...StyleSheet.absoluteFillObject,
-    overflow: 'hidden',
-  },
+  screen: { flex: 1, backgroundColor: '#FFF8F0' },
+  background: { ...StyleSheet.absoluteFillObject, overflow: 'hidden' },
   glowTop: {
     position: 'absolute',
     top: -100,
@@ -164,15 +189,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#F4E7D8',
     opacity: 0.9,
   },
-  safeArea: {
-    flex: 1,
-  },
-  content: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 80,
-    gap: 22,
-  },
+  safeArea: { flex: 1 },
+  content: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 80, gap: 22 },
   heroCard: {
     flexDirection: 'row',
     gap: 14,
@@ -183,16 +201,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F1E7DA',
   },
-  photoColumn: {
-    width: 98,
-    gap: 8,
-  },
-  photo: {
+  photoColumn: { width: 98, gap: 8 },
+  photo: { width: 98, height: 100, borderRadius: 24, backgroundColor: '#EBDCC6' },
+  photoFallback: {
     width: 98,
     height: 100,
     borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#EBDCC6',
   },
+  photoFallbackText: { color: '#6A5237', fontSize: 28, lineHeight: 32, fontWeight: '800' },
   ratingPill: {
     width: 98,
     flexDirection: 'row',
@@ -204,37 +223,13 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: '#FBF3E5',
   },
-  ratingText: {
-    color: '#4A4032',
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '700',
-  },
-  identityBlock: {
-    flex: 1,
-    gap: 10,
-    justifyContent: 'center',
-  },
-  nameRow: {
-    gap: 6,
-  },
-  name: {
-    color: '#171411',
-    fontSize: 26,
-    lineHeight: 30,
-    fontWeight: '700',
-    letterSpacing: -0.6,
-  },
-  shortInfo: {
-    color: '#6E665B',
-    fontSize: 14,
-    lineHeight: 19,
-    fontWeight: '600',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
+  ratingText: { color: '#4A4032', fontSize: 12, lineHeight: 16, fontWeight: '700' },
+  identityBlock: { flex: 1, gap: 10, justifyContent: 'center' },
+  nameRow: { gap: 6 },
+  name: { color: '#171411', fontSize: 26, lineHeight: 30, fontWeight: '700', letterSpacing: -0.6 },
+  shortInfo: { color: '#6E665B', fontSize: 14, lineHeight: 19, fontWeight: '600' },
+  handle: { color: '#8A8378', fontSize: 13, lineHeight: 17, fontWeight: '700' },
+  statsRow: { flexDirection: 'row', gap: 8 },
   miniStat: {
     minWidth: 74,
     gap: 2,
@@ -245,27 +240,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#EFE6DA',
   },
-  miniStatValue: {
-    color: '#171411',
-    fontSize: 16,
-    lineHeight: 20,
-    fontWeight: '700',
-  },
-  miniStatLabel: {
-    color: '#7C7468',
-    fontSize: 11,
-    lineHeight: 14,
-    fontWeight: '700',
-  },
-  section: {
-    gap: 14,
-  },
-  sectionTitle: {
-    color: '#171411',
-    fontSize: 20,
-    lineHeight: 24,
-    fontWeight: '700',
-  },
+  miniStatValue: { color: '#171411', fontSize: 16, lineHeight: 20, fontWeight: '700' },
+  miniStatLabel: { color: '#7C7468', fontSize: 11, lineHeight: 14, fontWeight: '700' },
+  section: { gap: 14 },
+  sectionTitle: { color: '#171411', fontSize: 20, lineHeight: 24, fontWeight: '700', letterSpacing: -0.3 },
   aboutCard: {
     padding: 18,
     borderRadius: 28,
@@ -273,16 +251,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F2E9DE',
   },
-  aboutText: {
-    color: '#5E584F',
-    fontSize: 15,
-    lineHeight: 23,
-  },
-  tagsWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
+  aboutText: { color: '#5E584F', fontSize: 15, lineHeight: 23 },
+  tagsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   tagChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -292,14 +262,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
   },
-  tagText: {
-    fontSize: 14,
-    lineHeight: 18,
-    fontWeight: '700',
-  },
-  commentsCard: {
-    gap: 12,
-  },
+  tagText: { fontSize: 14, lineHeight: 18, fontWeight: '700' },
+  commentsCard: { gap: 12 },
   commentItem: {
     gap: 10,
     padding: 18,
@@ -308,56 +272,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F2E9DE',
   },
-  commentHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  commentName: {
-    color: '#171411',
-    fontSize: 15,
-    lineHeight: 19,
-    fontWeight: '700',
-  },
-  commentRating: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: '#FBF3E5',
-  },
-  commentRatingText: {
-    color: '#4A4032',
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '700',
-  },
-  commentText: {
-    color: '#5E584F',
-    fontSize: 14,
-    lineHeight: 21,
-  },
+  commentText: { color: '#5E584F', fontSize: 14, lineHeight: 21 },
   emptyStateCard: {
     gap: 10,
+    marginHorizontal: 20,
+    marginTop: 20,
     padding: 22,
     borderRadius: 28,
     backgroundColor: 'rgba(255, 253, 249, 0.92)',
     borderWidth: 1,
     borderColor: '#EFE4D6',
-    margin: 20,
   },
-  emptyStateTitle: {
-    color: '#171411',
-    fontSize: 18,
-    lineHeight: 22,
-    fontWeight: '700',
-  },
-  emptyStateBody: {
-    color: '#6A6258',
-    fontSize: 15,
-    lineHeight: 21,
-  },
+  emptyStateTitle: { color: '#171411', fontSize: 18, lineHeight: 22, fontWeight: '700' },
+  emptyStateBody: { color: '#6A6258', fontSize: 15, lineHeight: 21 },
 });

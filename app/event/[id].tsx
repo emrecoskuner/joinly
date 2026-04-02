@@ -269,7 +269,13 @@ export default function EventDetailScreen() {
                 })
               }
               style={({ pressed }) => [styles.hostCard, pressed ? styles.cardPressed : null]}>
-              <Image contentFit="cover" source={{ uri: event.hostPhotoUrl }} style={styles.hostPhoto} />
+              {event.hostPhotoUrl ? (
+                <Image contentFit="cover" source={{ uri: event.hostPhotoUrl }} style={styles.hostPhoto} />
+              ) : (
+                <View style={styles.hostPhotoFallback}>
+                  <ThemedText style={styles.hostPhotoFallbackText}>{event.hostInitials}</ThemedText>
+                </View>
+              )}
               <View style={styles.hostCopy}>
                 <View style={styles.hostNameRow}>
                   <ThemedText style={styles.hostName}>{event.hostName}</ThemedText>
@@ -732,6 +738,20 @@ const styles = StyleSheet.create({
     height: 92,
     borderRadius: 24,
     backgroundColor: '#EBDCC6',
+  },
+  hostPhotoFallback: {
+    width: 78,
+    height: 92,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EBDCC6',
+  },
+  hostPhotoFallbackText: {
+    color: '#6A5237',
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: '800',
   },
   hostCopy: {
     flex: 1,

@@ -356,15 +356,15 @@ export async function endActivity(activityId: string): Promise<ServiceResponse<{
 }
 
 function mapProfile(profile: ProfileRow): ProfileSummary {
-  const fullName = profile.full_name?.trim() || 'Joinly Member';
+  const fullName = profile.full_name?.trim() || 'New user';
 
   return {
     id: profile.id,
     fullName,
     initials: getInitials(fullName),
     avatarUrl: profile.avatar_url ?? '',
-    bio: profile.bio ?? 'Joinly member',
-    rating: profile.rating_avg ?? 5,
+    bio: profile.bio?.trim() || 'No bio yet',
+    rating: profile.rating_avg ?? 0,
   };
 }
 
@@ -405,15 +405,15 @@ function isPendingStatus(status: string | null) {
 }
 
 function buildFallbackProfile(id: string): ProfileSummary {
-  const fullName = 'Joinly Member';
+  const fullName = 'New user';
 
   return {
     id,
     fullName,
     initials: getInitials(fullName),
     avatarUrl: '',
-    bio: 'Joinly member',
-    rating: 5,
+    bio: 'No bio yet',
+    rating: 0,
   };
 }
 
@@ -425,7 +425,7 @@ function getInitials(fullName: string) {
     .slice(0, 2);
 
   if (parts.length === 0) {
-    return 'JM';
+    return 'NU';
   }
 
   return parts.map((value) => value[0]?.toUpperCase() ?? '').join('');

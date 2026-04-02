@@ -2,22 +2,70 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ACTIVITY_CATEGORIES } from '@/constants/activity-categories';
-import { getProfileActivityCollections, profileData } from '@/components/profile/mock-profile';
 import { ThemedText } from '@/components/themed-text';
-import { useActivityStore } from '@/store/activity-store';
+import {
+  formatProfileHandle,
+  formatProfileShortInfo,
+  getProfileActivityCollections,
+  type ProfileActivityItem,
+} from '@/services/profiles';
 import { useProfileStore } from '@/store/profile-store';
 
 export default function ProfileScreen() {
-  const { createdActivities } = useActivityStore();
-  const { aboutMe, selectedInterestIds } = useProfileStore();
-  const { upcoming, hostedHistory, pastJoined } = getProfileActivityCollections(createdActivities);
-  const hostedCount = profileData.hostedBaseCount + createdActivities.length;
+  const { profile, loading } = useProfileStore();
+  const [collections, setCollections] = useState<{
+    upcoming: ProfileActivityItem[];
+    hostedHistory: ProfileActivityItem[];
+    pastJoined: ProfileActivityItem[];
+  }>({
+    upcoming: [],
+    hostedHistory: [],
+    pastJoined: [],
+  });
+
+  useEffect(() => {
+    if (!profile?.id) {
+      setCollections({ upcoming: [], hostedHistory: [], pastJoined: [] });
+      return;
+    }
+
+    void getProfileActivityCollections(profile.id).then(({ data, error }) => {
+      if (error) {
+        console.log('ProfileScreen.getProfileActivityCollections error', error);
+        return;
+      }
+
+      setCollections(
+        data ?? {
+          upcoming: [],
+          hostedHistory: [],
+          pastJoined: [],
+        }
+      );
+    });
+  }, [profile?.id]);
+
+  if (loading || !profile) {
+    return (
+      <View style={styles.screen}>
+        <StatusBar style="dark" />
+        <SafeAreaView edges={['top']} style={styles.safeArea}>
+          <View style={styles.loadingCard}>
+            <ThemedText style={styles.loadingTitle}>Loading profile</ThemedText>
+            <ThemedText style={styles.loadingBody}>Pulling your real profile from Joinly.</ThemedText>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
   const interestTags = ACTIVITY_CATEGORIES.filter((category) =>
-    selectedInterestIds.includes(category.label)
+    profile.interests.includes(category.label)
   );
 
   return (
@@ -29,28 +77,33 @@ export default function ProfileScreen() {
       </View>
 
       <SafeAreaView edges={['top']} style={styles.safeArea}>
-        <ScrollView
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-          bounces={false}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} bounces={false}>
           <View style={styles.heroCard}>
             <View style={styles.photoColumn}>
-              <Image contentFit="cover" source={{ uri: profileData.photoUrl }} style={styles.photo} />
+              {profile.avatarUrl ? (
+                <Image contentFit="cover" source={{ uri: profile.avatarUrl }} style={styles.photo} />
+              ) : (
+                <View style={styles.photoFallback}>
+                  <ThemedText style={styles.photoFallbackText}>{profile.initials}</ThemedText>
+                </View>
+              )}
               <View style={styles.ratingPill}>
                 <MaterialIcons color="#D89E35" name="star" size={15} />
-                <ThemedText style={styles.ratingText}>{profileData.rating.toFixed(1)}</ThemedText>
+                <ThemedText style={styles.ratingText}>{profile.ratingAvg.toFixed(1)}</ThemedText>
               </View>
             </View>
 
             <View style={styles.identityBlock}>
               <View style={styles.nameRow}>
-                <ThemedText style={styles.name}>{profileData.name}</ThemedText>
-                <ThemedText style={styles.shortInfo}>{profileData.shortInfo}</ThemedText>
+                <ThemedText style={styles.name}>{profile.fullName}</ThemedText>
+                <ThemedText style={styles.shortInfo}>{formatProfileShortInfo(profile)}</ThemedText>
+                <ThemedText style={styles.handle}>{formatProfileHandle(profile.username)}</ThemedText>
               </View>
 
               <View style={styles.statsRow}>
-                <MiniStat label="Hosted" value={`${hostedCount}`} />
-                <MiniStat label="Joined" value={`${profileData.joinedCount}`} />
+                <MiniStat label="Hosted" value={`${profile.hostedCount}`} />
+                <MiniStat label="Joined" value={`${profile.joinedCount}`} />
+                <MiniStat label="Reviews" value={`${profile.ratingCount}`} />
               </View>
             </View>
           </View>
@@ -60,13 +113,13 @@ export default function ProfileScreen() {
               <ThemedText style={styles.sectionTitle}>About Me</ThemedText>
               <Pressable
                 accessibilityRole="button"
-                onPress={() => router.push('/profile/edit-about')}
+                onPress={() => router.push('/profile/edit')}
                 style={({ pressed }) => [styles.editButton, pressed ? styles.buttonPressed : null]}>
                 <MaterialIcons color="#5B4630" name="edit" size={16} />
               </Pressable>
             </View>
             <View style={styles.aboutCard}>
-              <ThemedText style={styles.aboutText}>{aboutMe}</ThemedText>
+              <ThemedText style={styles.aboutText}>{profile.bio}</ThemedText>
             </View>
           </View>
 
@@ -75,42 +128,45 @@ export default function ProfileScreen() {
               <ThemedText style={styles.sectionTitle}>Interests</ThemedText>
               <Pressable
                 accessibilityRole="button"
-                onPress={() => router.push('/profile/edit-interests')}
+                onPress={() => router.push('/profile/edit')}
                 style={({ pressed }) => [styles.editButton, pressed ? styles.buttonPressed : null]}>
                 <MaterialIcons color="#5B4630" name="edit" size={16} />
               </Pressable>
             </View>
-            <View style={styles.tagsWrap}>
-              {interestTags.map((tag) => (
-                <View
-                  key={tag.id}
-                  style={[
-                    styles.tagChip,
-                    { backgroundColor: `${tag.color}14`, borderColor: `${tag.color}38` },
-                  ]}>
-                  <MaterialIcons
-                    color={tag.color}
-                    name={tag.icon as keyof typeof MaterialIcons.glyphMap}
-                    size={16}
-                  />
-                  <ThemedText style={[styles.tagText, { color: tag.color }]}>{tag.label}</ThemedText>
-                </View>
-              ))}
-            </View>
+            {interestTags.length > 0 ? (
+              <View style={styles.tagsWrap}>
+                {interestTags.map((tag) => (
+                  <View
+                    key={tag.id}
+                    style={[
+                      styles.tagChip,
+                      { backgroundColor: `${tag.color}14`, borderColor: `${tag.color}38` },
+                    ]}>
+                    <MaterialIcons
+                      color={tag.color}
+                      name={tag.icon as keyof typeof MaterialIcons.glyphMap}
+                      size={16}
+                    />
+                    <ThemedText style={[styles.tagText, { color: tag.color }]}>{tag.label}</ThemedText>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.aboutCard}>
+                <ThemedText style={styles.aboutText}>No interests selected yet.</ThemedText>
+              </View>
+            )}
           </View>
 
           <View style={styles.section}>
             <Pressable
               accessibilityRole="button"
               onPress={() => router.push('/profile/activities/upcoming')}
-              style={({ pressed }) => [
-                styles.wideActivityCard,
-                pressed ? styles.cardPressed : null,
-              ]}>
-              <ActivityCardHeader title="Upcoming" count={upcoming.length} />
+              style={({ pressed }) => [styles.wideActivityCard, pressed ? styles.cardPressed : null]}>
+              <ActivityCardHeader title="Upcoming" count={collections.upcoming.length} />
               <PreviewList
                 emptyLabel="No upcoming plans yet"
-                items={upcoming.map((activity) => activity.title)}
+                items={collections.upcoming.map((activity) => activity.title)}
               />
             </Pressable>
 
@@ -118,61 +174,35 @@ export default function ProfileScreen() {
               <Pressable
                 accessibilityRole="button"
                 onPress={() => router.push('/profile/activities/hosted')}
-                style={({ pressed }) => [
-                  styles.smallActivityCard,
-                  pressed ? styles.cardPressed : null,
-                ]}>
-                <ActivityCardHeader title="Hosted" count={hostedHistory.length} />
+                style={({ pressed }) => [styles.smallActivityCard, pressed ? styles.cardPressed : null]}>
+                <ActivityCardHeader title="Hosted" count={collections.hostedHistory.length} />
                 <PreviewList
                   emptyLabel="No hosted history yet"
-                  items={hostedHistory.map((activity) => activity.title)}
+                  items={collections.hostedHistory.map((activity) => activity.title)}
                 />
               </Pressable>
 
               <Pressable
                 accessibilityRole="button"
                 onPress={() => router.push('/profile/activities/joined')}
-                style={({ pressed }) => [
-                  styles.smallActivityCard,
-                  pressed ? styles.cardPressed : null,
-                ]}>
-                <ActivityCardHeader title="Past Joined" count={pastJoined.length} />
+                style={({ pressed }) => [styles.smallActivityCard, pressed ? styles.cardPressed : null]}>
+                <ActivityCardHeader title="Past Joined" count={collections.pastJoined.length} />
                 <PreviewList
                   emptyLabel="No joined history yet"
-                  items={pastJoined.map((activity) => activity.title)}
+                  items={collections.pastJoined.map((activity) => activity.title)}
                 />
               </Pressable>
             </View>
           </View>
 
           <View style={styles.section}>
-            <ThemedText style={styles.sectionTitle}>Comments</ThemedText>
+            <ThemedText style={styles.sectionTitle}>Trust Feedback</ThemedText>
             <View style={styles.commentsCard}>
-              {profileData.comments.map((comment) => (
-                <View key={comment.id} style={styles.commentItem}>
-                  <View style={styles.commentHeader}>
-                    <View style={styles.commentIdentity}>
-                      <View style={styles.commentAvatar}>
-                        <ThemedText style={styles.commentAvatarText}>
-                          {comment.reviewerName
-                            .split(' ')
-                            .map((part) => part[0])
-                            .join('')
-                            .slice(0, 2)}
-                        </ThemedText>
-                      </View>
-                      <ThemedText style={styles.commentName}>{comment.reviewerName}</ThemedText>
-                    </View>
-                    <View style={styles.commentRating}>
-                      <MaterialIcons color="#D89E35" name="star" size={14} />
-                      <ThemedText style={styles.commentRatingText}>
-                        {comment.rating.toFixed(1)}
-                      </ThemedText>
-                    </View>
-                  </View>
-                  <ThemedText style={styles.commentText}>{comment.text}</ThemedText>
-                </View>
-              ))}
+              <View style={styles.commentItem}>
+                <ThemedText style={styles.commentText}>
+                  Ratings are live from your profile record. Written feedback is not available in the current schema yet.
+                </ThemedText>
+              </View>
             </View>
           </View>
         </ScrollView>
@@ -224,14 +254,8 @@ function PreviewList({ items, emptyLabel }: { items: string[]; emptyLabel: strin
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#FFF8F0',
-  },
-  background: {
-    ...StyleSheet.absoluteFillObject,
-    overflow: 'hidden',
-  },
+  screen: { flex: 1, backgroundColor: '#FFF8F0' },
+  background: { ...StyleSheet.absoluteFillObject, overflow: 'hidden' },
   glowTop: {
     position: 'absolute',
     top: -100,
@@ -252,15 +276,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#F4E7D8',
     opacity: 0.9,
   },
-  safeArea: {
-    flex: 1,
+  safeArea: { flex: 1 },
+  content: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 120, gap: 22 },
+  loadingCard: {
+    marginHorizontal: 20,
+    marginTop: 20,
+    gap: 10,
+    padding: 20,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255, 253, 249, 0.92)',
+    borderWidth: 1,
+    borderColor: '#F1E7DA',
   },
-  content: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 120,
-    gap: 22,
-  },
+  loadingTitle: { color: '#171411', fontSize: 24, lineHeight: 30, fontWeight: '700' },
+  loadingBody: { color: '#5E584F', fontSize: 15, lineHeight: 22 },
   heroCard: {
     flexDirection: 'row',
     gap: 14,
@@ -276,24 +305,19 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 2,
   },
-  photoColumn: {
-    width: 98,
-    gap: 8,
-  },
-  photo: {
+  photoColumn: { width: 98, gap: 8 },
+  photo: { width: 98, height: 100, borderRadius: 24, backgroundColor: '#EBDCC6' },
+  photoFallback: {
     width: 98,
     height: 100,
     borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#EBDCC6',
   },
-  identityBlock: {
-    flex: 1,
-    gap: 10,
-    justifyContent: 'center',
-  },
-  nameRow: {
-    gap: 6,
-  },
+  photoFallbackText: { color: '#6A5237', fontSize: 28, lineHeight: 32, fontWeight: '800' },
+  identityBlock: { flex: 1, gap: 10, justifyContent: 'center' },
+  nameRow: { gap: 6 },
   name: {
     color: '#171411',
     fontSize: 26,
@@ -301,12 +325,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.6,
   },
-  shortInfo: {
-    color: '#6E665B',
-    fontSize: 14,
-    lineHeight: 19,
-    fontWeight: '600',
-  },
+  shortInfo: { color: '#6E665B', fontSize: 14, lineHeight: 19, fontWeight: '600' },
+  handle: { color: '#8A8378', fontSize: 13, lineHeight: 17, fontWeight: '700' },
   ratingPill: {
     width: 98,
     flexDirection: 'row',
@@ -318,16 +338,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: '#FBF3E5',
   },
-  ratingText: {
-    color: '#4A4032',
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '700',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
+  ratingText: { color: '#4A4032', fontSize: 12, lineHeight: 16, fontWeight: '700' },
+  statsRow: { flexDirection: 'row', gap: 8 },
   miniStat: {
     minWidth: 74,
     gap: 2,
@@ -338,26 +350,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#EFE6DA',
   },
-  miniStatValue: {
-    color: '#171411',
-    fontSize: 16,
-    lineHeight: 20,
-    fontWeight: '700',
-  },
-  miniStatLabel: {
-    color: '#7C7468',
-    fontSize: 11,
-    lineHeight: 14,
-    fontWeight: '700',
-  },
-  section: {
-    gap: 14,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
+  miniStatValue: { color: '#171411', fontSize: 16, lineHeight: 20, fontWeight: '700' },
+  miniStatLabel: { color: '#7C7468', fontSize: 11, lineHeight: 14, fontWeight: '700' },
+  section: { gap: 14 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: {
     color: '#171411',
     fontSize: 20,
@@ -373,9 +369,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#F5EEE4',
   },
-  buttonPressed: {
-    opacity: 0.9,
-  },
+  buttonPressed: { opacity: 0.9 },
   aboutCard: {
     padding: 18,
     borderRadius: 28,
@@ -383,16 +377,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F2E9DE',
   },
-  aboutText: {
-    color: '#5E584F',
-    fontSize: 15,
-    lineHeight: 23,
-  },
-  tagsWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
+  aboutText: { color: '#5E584F', fontSize: 15, lineHeight: 23 },
+  tagsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   tagChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -402,11 +388,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
   },
-  tagText: {
-    fontSize: 14,
-    lineHeight: 18,
-    fontWeight: '700',
-  },
+  tagText: { fontSize: 14, lineHeight: 18, fontWeight: '700' },
   wideActivityCard: {
     gap: 14,
     padding: 18,
@@ -415,10 +397,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F2E9DE',
   },
-  activityRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
+  activityRow: { flexDirection: 'row', gap: 12 },
   smallActivityCard: {
     flex: 1,
     gap: 14,
@@ -429,27 +408,15 @@ const styles = StyleSheet.create({
     borderColor: '#F2E9DE',
     minHeight: 160,
   },
-  cardPressed: {
-    opacity: 0.94,
-    transform: [{ scale: 0.985 }],
-  },
+  cardPressed: { opacity: 0.94, transform: [{ scale: 0.985 }] },
   activityCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
   },
-  activityTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  activityCardTitle: {
-    color: '#171411',
-    fontSize: 18,
-    lineHeight: 22,
-    fontWeight: '700',
-  },
+  activityTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  activityCardTitle: { color: '#171411', fontSize: 18, lineHeight: 22, fontWeight: '700' },
   activityCountPill: {
     minWidth: 28,
     paddingHorizontal: 8,
@@ -458,41 +425,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5EEE4',
     alignItems: 'center',
   },
-  activityCountText: {
-    color: '#5E584F',
-    fontSize: 12,
-    lineHeight: 14,
-    fontWeight: '800',
-  },
-  previewList: {
-    gap: 10,
-  },
-  previewRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  previewDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#D6C3AB',
-  },
-  previewText: {
-    flex: 1,
-    color: '#5E584F',
-    fontSize: 14,
-    lineHeight: 18,
-    fontWeight: '600',
-  },
-  emptyPreviewText: {
-    color: '#8A8378',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  commentsCard: {
-    gap: 12,
-  },
+  activityCountText: { color: '#5E584F', fontSize: 12, lineHeight: 14, fontWeight: '800' },
+  previewList: { gap: 10 },
+  previewRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  previewDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#D6C3AB' },
+  previewText: { flex: 1, color: '#5E584F', fontSize: 14, lineHeight: 18, fontWeight: '600' },
+  emptyPreviewText: { color: '#8A8378', fontSize: 14, lineHeight: 20 },
+  commentsCard: { gap: 12 },
   commentItem: {
     gap: 10,
     padding: 18,
@@ -501,56 +440,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F2E9DE',
   },
-  commentHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  commentIdentity: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flex: 1,
-  },
-  commentAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F3E8D8',
-  },
-  commentAvatarText: {
-    color: '#6A5237',
-    fontSize: 13,
-    lineHeight: 16,
-    fontWeight: '800',
-  },
-  commentName: {
-    color: '#171411',
-    fontSize: 15,
-    lineHeight: 19,
-    fontWeight: '700',
-  },
-  commentRating: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: '#FBF3E5',
-  },
-  commentRatingText: {
-    color: '#4A4032',
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '700',
-  },
-  commentText: {
-    color: '#5E584F',
-    fontSize: 14,
-    lineHeight: 21,
-  },
+  commentText: { color: '#5E584F', fontSize: 14, lineHeight: 21 },
 });

@@ -6,6 +6,7 @@ import type { Participant } from '@/store/activity-store';
 
 type ParticipantRowProps = {
   participant: Participant;
+  onPress?: () => void;
   primaryActionLabel?: string;
   secondaryActionLabel?: string;
   onPrimaryAction?: () => void;
@@ -14,13 +15,17 @@ type ParticipantRowProps = {
 
 export function ParticipantRow({
   participant,
+  onPress,
   primaryActionLabel,
   secondaryActionLabel,
   onPrimaryAction,
   onSecondaryAction,
 }: ParticipantRowProps) {
   return (
-    <View style={styles.row}>
+    <Pressable
+      accessibilityRole={onPress ? 'button' : undefined}
+      onPress={onPress}
+      style={({ pressed }) => [styles.row, pressed && onPress ? styles.rowPressed : null]}>
       <View style={styles.identityBlock}>
         <View style={styles.avatar}>
           <ThemedText style={styles.avatarText}>{participant.initials}</ThemedText>
@@ -46,7 +51,7 @@ export function ParticipantRow({
           <ActionButton label={primaryActionLabel} onPress={onPrimaryAction} variant="primary" />
         ) : null}
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -87,6 +92,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFDFC',
     borderWidth: 1,
     borderColor: '#EFE6DA',
+  },
+  rowPressed: {
+    opacity: 0.95,
   },
   identityBlock: {
     flexDirection: 'row',

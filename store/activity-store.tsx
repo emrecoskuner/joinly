@@ -22,6 +22,7 @@ import {
   rejectParticipant as rejectParticipantService,
   removeParticipant as removeParticipantService,
 } from '@/services/participants';
+import { useProfileStore } from '@/store/profile-store';
 
 export type Participant = {
   id: string;
@@ -94,8 +95,22 @@ const ActivityStoreContext = createContext<ActivityStoreValue | null>(null);
 
 export function ActivityStoreProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const { profile } = useProfileStore();
   const currentUserId = user?.id ?? '';
-  const currentUserProfile = useMemo(() => mapUserToProfileSummary(user), [user]);
+  const currentUserProfile = useMemo(
+    () =>
+      profile
+        ? ({
+            id: profile.id,
+            fullName: profile.fullName,
+            initials: profile.initials,
+            avatarUrl: profile.avatarUrl,
+            bio: profile.bio,
+            rating: profile.ratingAvg,
+          } satisfies ProfileSummary)
+        : null,
+    [profile]
+  );
   const currentUserParticipant = useMemo(
     () =>
       currentUserProfile
@@ -446,7 +461,7 @@ export function mapActivityToEventItem(activity: Activity): EventItem {
     hostId: activity.hostId ?? '',
     hostName: activity.hostName,
     hostInitials: activity.hostInitials,
-    hostBio: activity.hostBio ?? 'Trusted Joinly host',
+    hostBio: activity.hostBio ?? 'No bio yet',
     hostPhotoUrl: activity.hostPhotoUrl ?? '',
     participantCount: activity.approvedParticipants.length,
     participantLimit: activity.participantLimit,
@@ -458,7 +473,7 @@ export function mapActivityToEventItem(activity: Activity): EventItem {
       rating: participant.rating,
     })),
     privacyType: mapPrivacyType(activity),
-    rating: activity.hostRating ?? 5,
+    rating: activity.hostRating ?? 0,
     accentColor: getAccentColor(activity.type),
   };
 }
@@ -651,31 +666,6 @@ function formatTimeLabel(date: Date) {
     minute: '2-digit',
     hour12: false,
   }).format(date);
-}
-
-function mapUserToProfileSummary(user: { id: string; email?: string; user_metadata?: Record<string, unknown> } | null) {
-  if (!user) {
-    return null;
-  }
-
-  const metadataName = typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name : '';
-  const emailName = user.email?.split('@')[0] ?? 'You';
-  const fullName = metadataName.trim() || emailName;
-
-  return {
-    id: user.id,
-    fullName,
-    initials: fullName
-      .split(' ')
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((value) => value[0]?.toUpperCase() ?? '')
-      .join('') || 'YO',
-    avatarUrl: '',
-    bio: 'Joinly member',
-    rating: 5,
-  } satisfies ProfileSummary;
 }
 
 export const getActivityAccentColor = getAccentColor;
