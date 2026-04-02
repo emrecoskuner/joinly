@@ -3,11 +3,12 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ACTIVITY_CATEGORIES } from '@/constants/activity-categories';
 import { ThemedText } from '@/components/themed-text';
+import { useAuth } from '@/context/AuthContext';
 import {
   formatProfileHandle,
   formatProfileShortInfo,
@@ -17,7 +18,9 @@ import {
 import { useProfileStore } from '@/store/profile-store';
 
 export default function ProfileScreen() {
+  const { signOut } = useAuth();
   const { profile, loading } = useProfileStore();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [collections, setCollections] = useState<{
     upcoming: ProfileActivityItem[];
     hostedHistory: ProfileActivityItem[];
@@ -67,6 +70,20 @@ export default function ProfileScreen() {
   const interestTags = ACTIVITY_CATEGORIES.filter((category) =>
     profile.interests.includes(category.label)
   );
+
+  const handleLogOut = async () => {
+    setIsLoggingOut(true);
+    const { error } = await signOut();
+    setIsLoggingOut(false);
+
+    if (error) {
+      console.log('ProfileScreen.signOut error', error);
+      Alert.alert('Unable to log out', error.message);
+      return;
+    }
+
+    router.replace('/sign-in');
+  };
 
   return (
     <View style={styles.screen}>
@@ -205,6 +222,23 @@ export default function ProfileScreen() {
               </View>
             </View>
           </View>
+
+          <Pressable
+            accessibilityRole="button"
+            disabled={isLoggingOut}
+            onPress={() => {
+              void handleLogOut();
+            }}
+            style={({ pressed }) => [
+              styles.logoutButton,
+              pressed ? styles.cardPressed : null,
+              isLoggingOut ? styles.logoutButtonDisabled : null,
+            ]}>
+            <MaterialIcons color="#B14F46" name="logout" size={18} />
+            <ThemedText style={styles.logoutButtonText}>
+              {isLoggingOut ? 'Logging Out...' : 'Log Out'}
+            </ThemedText>
+          </Pressable>
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -441,4 +475,26 @@ const styles = StyleSheet.create({
     borderColor: '#F2E9DE',
   },
   commentText: { color: '#5E584F', fontSize: 14, lineHeight: 21 },
+  logoutButton: {
+    minHeight: 54,
+    marginTop: 8,
+    marginBottom: 12,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#F1CDC8',
+    backgroundColor: '#FFF4F2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  logoutButtonText: {
+    color: '#B14F46',
+    fontSize: 15,
+    lineHeight: 19,
+    fontWeight: '800',
+  },
+  logoutButtonDisabled: {
+    opacity: 0.7,
+  },
 });

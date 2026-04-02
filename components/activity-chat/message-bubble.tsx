@@ -2,10 +2,10 @@ import { Image } from 'expo-image';
 import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import type { ActivityMessage } from '@/store/activity-store';
+import type { ChatMessage } from '@/services/messages';
 
 type MessageBubbleProps = {
-  message: ActivityMessage;
+  message: ChatMessage;
   isMine: boolean;
 };
 
@@ -13,7 +13,15 @@ export function MessageBubble({ message, isMine }: MessageBubbleProps) {
   return (
     <View style={[styles.row, isMine ? styles.rowMine : null]}>
       {!isMine ? (
-        <Image contentFit="cover" source={{ uri: message.senderAvatar }} style={styles.avatar} />
+        message.senderAvatar ? (
+          <Image contentFit="cover" source={{ uri: message.senderAvatar }} style={styles.avatar} />
+        ) : (
+          <View style={styles.avatarFallback}>
+            <ThemedText style={styles.avatarFallbackText}>
+              {getInitials(message.senderName)}
+            </ThemedText>
+          </View>
+        )
       ) : null}
       <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}>
         {!isMine ? <ThemedText style={styles.senderName}>{message.senderName}</ThemedText> : null}
@@ -49,6 +57,20 @@ const styles = StyleSheet.create({
     height: 34,
     borderRadius: 17,
     backgroundColor: '#E8DCC9',
+  },
+  avatarFallback: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E8DCC9',
+  },
+  avatarFallbackText: {
+    color: '#6A5237',
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '800',
   },
   bubble: {
     maxWidth: '78%',
@@ -92,3 +114,17 @@ const styles = StyleSheet.create({
     color: '#D7CFC4',
   },
 });
+
+function getInitials(fullName: string) {
+  const parts = fullName
+    .split(' ')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+
+  if (parts.length === 0) {
+    return 'NU';
+  }
+
+  return parts.map((value) => value[0]?.toUpperCase() ?? '').join('');
+}

@@ -3,6 +3,7 @@ import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -15,6 +16,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChatInput } from '@/components/activity-chat/chat-input';
 import { MessageList } from '@/components/activity-chat/message-list';
 import { ThemedText } from '@/components/themed-text';
+import { supabase } from '@/lib/supabase';
+import {
+  getActivityMessages,
+  getChatMessageById,
+  sendActivityMessage,
+  type ChatMessage,
+} from '@/services/messages';
 import {
   canAccessActivityChat,
   isActivityEnded,
@@ -33,11 +41,12 @@ export default function ActivityChatScreen() {
     currentUserId,
     currentUserParticipant,
     endedActivitiesById,
-    messagesByActivityId,
     participationByEventId,
-    sendMessage,
   } = useActivityStore();
   const [draftMessage, setDraftMessage] = useState('');
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(true);
+  const [isSending, setIsSending] = useState(false);
   const scrollViewRef = useRef<ScrollView | null>(null);
 
   const activity = useMemo(() => {
@@ -59,6 +68,7 @@ export default function ActivityChatScreen() {
 
     return browseEvents.find((event) => event.id === id);
   }, [browseEvents, createdActivities, endedActivitiesById, id]);
+
   const syncedActivity = activity
     ? syncEventParticipationForCurrentUser(
         activity,
@@ -68,25 +78,111 @@ export default function ActivityChatScreen() {
       )
     : undefined;
   const isEnded = syncedActivity ? isActivityEnded(syncedActivity.id, endedActivitiesById) : false;
-
-  const participationStatus = syncedActivity && !isEnded
+  const participationStatus = syncedActivity
     ? resolveEventParticipationStatus(syncedActivity, participationByEventId, currentUserId)
     : 'none';
-  const hasAccess = isEnded || canAccessActivityChat(participationStatus);
+  const hasAccess = canAccessActivityChat(participationStatus);
   const isPast = syncedActivity ? isActivityPast(syncedActivity.dateTimeIso) : false;
   const isChatClosed = isPast || isEnded;
-  const messages = id ? messagesByActivityId[id] ?? [] : [];
 
   useEffect(() => {
     scrollViewRef.current?.scrollToEnd({ animated: false });
   }, [messages.length]);
 
-  const handleSend = () => {
-    if (!id || !syncedActivity || !hasAccess || isChatClosed) {
+  useEffect(() => {
+    if (!id || !syncedActivity || !hasAccess) {
+      setMessages([]);
+      setIsLoadingMessages(false);
       return;
     }
 
-    sendMessage(id, draftMessage);
+    let isActive = true;
+    setIsLoadingMessages(true);
+
+    void getActivityMessages(id).then(({ data, error }) => {
+      if (!isActive) {
+        return;
+      }
+
+      if (error) {
+        console.log('ActivityChatScreen.getActivityMessages error', error);
+        Alert.alert('Unable to load chat', error.message);
+        setMessages([]);
+        setIsLoadingMessages(false);
+        return;
+      }
+
+      setMessages(data ?? []);
+      setIsLoadingMessages(false);
+    });
+
+    const channel = supabase
+      .channel(`activity-messages:${id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'activity_messages',
+          filter: `activity_id=eq.${id}`,
+        },
+        (payload) => {
+          const messageId = typeof payload.new.id === 'string' ? payload.new.id : '';
+
+          if (!messageId) {
+            return;
+          }
+
+          void getChatMessageById(messageId).then(({ data, error }) => {
+            if (!isActive) {
+              return;
+            }
+
+            if (error) {
+              console.log('ActivityChatScreen.realtime error', error);
+              return;
+            }
+
+            if (!data) {
+              return;
+            }
+
+            setMessages((currentValue) => {
+              if (currentValue.some((message) => message.id === data.id)) {
+                return currentValue;
+              }
+
+              return [...currentValue, data].sort(
+                (left, right) =>
+                  new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime()
+              );
+            });
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isActive = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [hasAccess, id, syncedActivity]);
+
+  const handleSend = async () => {
+    if (!id || !syncedActivity || !hasAccess || isChatClosed || !currentUserId) {
+      return;
+    }
+
+    setIsSending(true);
+    const { error } = await sendActivityMessage(id, currentUserId, draftMessage);
+    setIsSending(false);
+
+    if (error) {
+      console.log('ActivityChatScreen.sendActivityMessage error', error);
+      Alert.alert('Unable to send message', error.message);
+      return;
+    }
+
     setDraftMessage('');
   };
 
@@ -99,7 +195,7 @@ export default function ActivityChatScreen() {
           <View style={styles.emptyCard}>
             <ThemedText style={styles.emptyTitle}>Chat not found</ThemedText>
             <ThemedText style={styles.emptyBody}>
-              This activity could not be loaded from local state.
+              This activity could not be loaded from Joinly.
             </ThemedText>
           </View>
         </SafeAreaView>
@@ -141,9 +237,9 @@ export default function ActivityChatScreen() {
 
             {!hasAccess ? (
               <View style={styles.blockedCard}>
-                <ThemedText style={styles.blockedTitle}>Chat is only for participants</ThemedText>
+                <ThemedText style={styles.blockedTitle}>Chat is only for confirmed members</ThemedText>
                 <ThemedText style={styles.blockedBody}>
-                  Join this activity or host it to access the conversation.
+                  Only the host and joined participants can read or send messages in this activity.
                 </ThemedText>
               </View>
             ) : (
@@ -160,11 +256,20 @@ export default function ActivityChatScreen() {
                 </View>
 
                 <View style={styles.messagesWrap}>
-                  <MessageList
-                    currentUserId={currentUserId}
-                    messages={messages}
-                    scrollViewRef={scrollViewRef}
-                  />
+                  {isLoadingMessages ? (
+                    <View style={styles.loadingCard}>
+                      <ThemedText style={styles.loadingTitle}>Loading chat</ThemedText>
+                      <ThemedText style={styles.loadingBody}>
+                        Pulling the latest messages for this activity.
+                      </ThemedText>
+                    </View>
+                  ) : (
+                    <MessageList
+                      currentUserId={currentUserId}
+                      messages={messages}
+                      scrollViewRef={scrollViewRef}
+                    />
+                  )}
                 </View>
 
                 {isChatClosed ? (
@@ -175,8 +280,12 @@ export default function ActivityChatScreen() {
                   </View>
                 ) : (
                   <ChatInput
+                    disabled={isSending}
                     onChangeText={setDraftMessage}
-                    onSend={handleSend}
+                    onSend={() => {
+                      void handleSend();
+                    }}
+                    placeholder={isSending ? 'Sending...' : 'Write a message'}
                     value={draftMessage}
                   />
                 )}
@@ -282,6 +391,25 @@ const styles = StyleSheet.create({
   messagesWrap: {
     flex: 1,
     minHeight: 220,
+  },
+  loadingCard: {
+    gap: 8,
+    padding: 22,
+    borderRadius: 26,
+    backgroundColor: '#FFFDFC',
+    borderWidth: 1,
+    borderColor: '#EFE4D6',
+  },
+  loadingTitle: {
+    color: '#171411',
+    fontSize: 17,
+    lineHeight: 21,
+    fontWeight: '700',
+  },
+  loadingBody: {
+    color: '#6B6359',
+    fontSize: 14,
+    lineHeight: 20,
   },
   blockedCard: {
     gap: 8,

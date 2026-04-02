@@ -33,15 +33,6 @@ export type Participant = {
 };
 
 export type ParticipationStatus = 'none' | 'pending' | 'joined' | 'hosting';
-export type ActivityMessage = {
-  id: string;
-  activityId: string;
-  senderId: string;
-  senderName: string;
-  senderAvatar: string;
-  text: string;
-  createdAt: string;
-};
 
 export type Activity = {
   id: string;
@@ -75,7 +66,6 @@ type ActivityStoreValue = {
   browseEvents: EventItem[];
   createdActivities: Activity[];
   participationByEventId: Record<string, Exclude<ParticipationStatus, 'hosting'>>;
-  messagesByActivityId: Record<string, ActivityMessage[]>;
   endedActivitiesById: Record<string, EventItem>;
   isLoadingActivities: boolean;
   refreshActivities: () => Promise<void>;
@@ -88,7 +78,6 @@ type ActivityStoreValue = {
   requestToJoinEvent: (eventId: string) => Promise<MutationResponse>;
   leaveActivity: (eventId: string) => Promise<MutationResponse>;
   endActivity: (event: EventItem) => Promise<MutationResponse>;
-  sendMessage: (activityId: string, text: string) => void;
 };
 
 const ActivityStoreContext = createContext<ActivityStoreValue | null>(null);
@@ -125,9 +114,6 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
     [currentUserProfile]
   );
   const [activityRecords, setActivityRecords] = useState<ActivityRecord[]>([]);
-  const [messagesByActivityId, setMessagesByActivityId] = useState<Record<string, ActivityMessage[]>>(
-    {}
-  );
   const [endedActivitiesById, setEndedActivitiesById] = useState<Record<string, EventItem>>({});
   const [isLoadingActivities, setIsLoadingActivities] = useState(true);
 
@@ -383,30 +369,6 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
     return { error: null };
   };
 
-  const sendMessage = (activityId: string, text: string) => {
-    const trimmedText = text.trim();
-
-    if (!trimmedText) {
-      return;
-    }
-
-    setMessagesByActivityId((currentValue) => ({
-      ...currentValue,
-      [activityId]: [
-        ...(currentValue[activityId] ?? []),
-        {
-          id: `${activityId}-${Date.now()}`,
-          activityId,
-          senderId: currentUserId || 'guest',
-          senderName: currentUserProfile?.fullName ?? 'You',
-          senderAvatar: currentUserProfile?.avatarUrl ?? '',
-          text: trimmedText,
-          createdAt: new Date().toISOString(),
-        },
-      ],
-    }));
-  };
-
   return (
     <ActivityStoreContext.Provider
       value={{
@@ -415,7 +377,6 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
         browseEvents,
         createdActivities,
         participationByEventId,
-        messagesByActivityId,
         endedActivitiesById,
         isLoadingActivities,
         refreshActivities,
@@ -428,7 +389,6 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
         requestToJoinEvent,
         leaveActivity,
         endActivity,
-        sendMessage,
       }}>
       {children}
     </ActivityStoreContext.Provider>

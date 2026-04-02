@@ -2,11 +2,11 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { MessageBubble } from '@/components/activity-chat/message-bubble';
 import { ThemedText } from '@/components/themed-text';
-import type { ActivityMessage } from '@/store/activity-store';
+import type { ChatMessage } from '@/services/messages';
 
 type MessageListProps = {
   currentUserId: string;
-  messages: ActivityMessage[];
+  messages: ChatMessage[];
   scrollViewRef?: React.RefObject<ScrollView | null>;
 };
 
