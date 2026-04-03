@@ -27,6 +27,8 @@ export type ActivityRecord = {
   description: string;
   category: string;
   location: string;
+  latitude?: number | null;
+  longitude?: number | null;
   startsAt: string;
   endsAt?: string | null;
   participantLimit: number;
@@ -45,6 +47,10 @@ export type CreateActivityPayload = {
   description: string;
   type: string;
   locationName: string;
+  locationAddress?: string | null;
+  googlePlaceId?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   startsAt: string;
   endsAt?: string | null;
   capacity: number;
@@ -59,6 +65,8 @@ type ActivityRow = {
   description: string | null;
   category: string | null;
   location: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   starts_at: string | null;
   ends_at?: string | null;
   participant_limit: number | null;
@@ -96,7 +104,7 @@ export async function getActivities(currentUserId?: string): Promise<ServiceResp
     const { data: activityRows, error: activityError } = await supabase
       .from('activities')
       .select(
-        'id, title, description, category:type, location:location_name, starts_at, ends_at, participant_limit:capacity, approval_mode, visibility, status, created_at, host_id'
+        'id, title, description, category:type, location:location_name, latitude, longitude, starts_at, ends_at, participant_limit:capacity, approval_mode, visibility, status, created_at, host_id'
       )
       .eq('status', 'active')
       .order('starts_at', { ascending: true });
@@ -196,6 +204,8 @@ export async function getActivities(currentUserId?: string): Promise<ServiceResp
         description: activity.description ?? '',
         category: activity.category ?? 'Activity',
         location: activity.location ?? 'Location TBD',
+        latitude: activity.latitude ?? null,
+        longitude: activity.longitude ?? null,
         startsAt: activity.starts_at,
         endsAt: activity.ends_at ?? null,
         participantLimit: activity.participant_limit ?? Math.max(approvedParticipants.length, 1),
@@ -223,25 +233,49 @@ export async function createActivity(
   try {
     console.log('createActivity payload', payload);
 
-    const { data: activityRow, error: activityError } = await supabase
+    const baseInsertValues = {
+      title: payload.title,
+      description: payload.description,
+      type: payload.type,
+      location_name: payload.locationName,
+      latitude: payload.latitude ?? null,
+      longitude: payload.longitude ?? null,
+      starts_at: payload.startsAt,
+      ends_at: payload.endsAt ?? null,
+      capacity: payload.capacity,
+      approval_mode: normalizeApprovalMode(payload.approvalMode),
+      visibility: payload.visibility,
+      status: 'active',
+      host_id: payload.hostId,
+    };
+    const extendedInsertValues = {
+      ...baseInsertValues,
+      google_place_id: payload.googlePlaceId ?? null,
+      location_address: payload.locationAddress ?? null,
+    };
+
+    let insertResult = await supabase
       .from('activities')
-      .insert({
-        title: payload.title,
-        description: payload.description,
-        type: payload.type,
-        location_name: payload.locationName,
-        starts_at: payload.startsAt,
-        ends_at: payload.endsAt ?? null,
-        capacity: payload.capacity,
-        approval_mode: normalizeApprovalMode(payload.approvalMode),
-        visibility: payload.visibility,
-        status: 'active',
-        host_id: payload.hostId,
-      })
+      .insert(extendedInsertValues)
       .select(
-        'id, title, description, category:type, location:location_name, starts_at, ends_at, participant_limit:capacity, approval_mode, visibility, status, created_at, host_id'
+        'id, title, description, category:type, location:location_name, latitude, longitude, starts_at, ends_at, participant_limit:capacity, approval_mode, visibility, status, created_at, host_id'
       )
       .single();
+
+    if (
+      insertResult.error &&
+      shouldRetryWithoutOptionalLocationColumns(insertResult.error.message)
+    ) {
+      insertResult = await supabase
+        .from('activities')
+        .insert(baseInsertValues)
+        .select(
+          'id, title, description, category:type, location:location_name, latitude, longitude, starts_at, ends_at, participant_limit:capacity, approval_mode, visibility, status, created_at, host_id'
+        )
+        .single();
+    }
+
+    const { data: activityRow, error: activityError } = insertResult;
 
     console.log('createActivity insert result', activityRow);
 
@@ -288,6 +322,7 @@ export async function updateActivity(
 ): Promise<ServiceResponse<{ id: string }>> {
   try {
     const nextValues: Record<string, string | number | null> = {};
+    const optionalLocationValues: Record<string, string | number | null> = {};
 
     if (typeof updates.title === 'string') {
       nextValues.title = updates.title;
@@ -300,6 +335,30 @@ export async function updateActivity(
     }
     if (typeof updates.locationName === 'string') {
       nextValues.location_name = updates.locationName;
+    }
+    if (typeof updates.locationAddress === 'string') {
+      optionalLocationValues.location_address = updates.locationAddress;
+    }
+    if (updates.locationAddress === null) {
+      optionalLocationValues.location_address = updates.locationAddress;
+    }
+    if (typeof updates.googlePlaceId === 'string') {
+      optionalLocationValues.google_place_id = updates.googlePlaceId;
+    }
+    if (updates.googlePlaceId === null) {
+      optionalLocationValues.google_place_id = updates.googlePlaceId;
+    }
+    if (typeof updates.latitude === 'number') {
+      nextValues.latitude = updates.latitude;
+    }
+    if (updates.latitude === null) {
+      nextValues.latitude = updates.latitude;
+    }
+    if (typeof updates.longitude === 'number') {
+      nextValues.longitude = updates.longitude;
+    }
+    if (updates.longitude === null) {
+      nextValues.longitude = updates.longitude;
     }
     if (typeof updates.startsAt === 'string') {
       nextValues.starts_at = updates.startsAt;
@@ -320,7 +379,22 @@ export async function updateActivity(
       nextValues.visibility = updates.visibility;
     }
 
-    const { error } = await supabase.from('activities').update(nextValues).eq('id', activityId);
+    let updateResult = await supabase
+      .from('activities')
+      .update({
+        ...nextValues,
+        ...optionalLocationValues,
+      })
+      .eq('id', activityId);
+
+    if (
+      updateResult.error &&
+      shouldRetryWithoutOptionalLocationColumns(updateResult.error.message)
+    ) {
+      updateResult = await supabase.from('activities').update(nextValues).eq('id', activityId);
+    }
+
+    const { error } = updateResult;
 
     if (error) {
       console.log('updateActivity error', error);
@@ -445,6 +519,10 @@ function toError(error: unknown) {
   }
 
   return new Error('Unknown service error');
+}
+
+function shouldRetryWithoutOptionalLocationColumns(message: string) {
+  return message.includes('google_place_id') || message.includes('location_address');
 }
 
 export function getAccentColor(category: string) {

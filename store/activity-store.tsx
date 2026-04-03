@@ -42,6 +42,10 @@ export type Activity = {
   date: string;
   time: string;
   location: string;
+  locationAddress?: string | null;
+  googlePlaceId?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   participantLimit: number;
   approvalMode: ApprovalMode;
   visibility: Visibility;
@@ -176,6 +180,10 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
       description: activity.description,
       type: activity.type,
       locationName: activity.location,
+      locationAddress: activity.locationAddress,
+      googlePlaceId: activity.googlePlaceId,
+      latitude: activity.latitude,
+      longitude: activity.longitude,
       startsAt,
       capacity: activity.participantLimit,
       endsAt: null,
@@ -210,6 +218,10 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
       description: mergedActivity.description,
       type: mergedActivity.type,
       locationName: mergedActivity.location,
+      locationAddress: mergedActivity.locationAddress,
+      googlePlaceId: mergedActivity.googlePlaceId,
+      latitude: mergedActivity.latitude,
+      longitude: mergedActivity.longitude,
       startsAt: buildCreatedActivityDateTime(mergedActivity),
       endsAt: null,
       capacity: mergedActivity.participantLimit,
@@ -416,6 +428,8 @@ export function mapActivityToEventItem(activity: Activity): EventItem {
     dateLabel: formatDateLabel(new Date(activity.date)),
     timeLabel: formatTimeLabel(new Date(activity.time)),
     location: activity.location,
+    latitude: activity.latitude ?? undefined,
+    longitude: activity.longitude ?? undefined,
     description: activity.description,
     notes: activity.description,
     hostId: activity.hostId ?? '',
@@ -540,6 +554,10 @@ function mapActivityRecordToManagedActivity(activity: ActivityRecord): Activity 
     date: activity.startsAt,
     time: activity.startsAt,
     location: activity.location,
+    locationAddress: undefined,
+    googlePlaceId: undefined,
+    latitude: activity.latitude ?? undefined,
+    longitude: activity.longitude ?? undefined,
     participantLimit: activity.participantLimit,
     approvalMode: activity.approvalMode,
     visibility: activity.visibility,
@@ -568,6 +586,8 @@ function mapActivityRecordToEventItem(activity: ActivityRecord): EventItem {
     dateLabel: formatDateLabel(eventDate),
     timeLabel: formatTimeLabel(eventDate),
     location: activity.location,
+    latitude: activity.latitude ?? undefined,
+    longitude: activity.longitude ?? undefined,
     description: activity.description,
     notes: activity.description,
     hostId: activity.hostId,

@@ -5,7 +5,7 @@ import DateTimePicker, {
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -20,6 +20,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ParticipantRow } from '@/components/activity-management/participant-row';
+import { LocationAutocomplete } from '@/components/create/location-autocomplete';
 import {
   FieldCard,
   FormSection,
@@ -27,6 +28,14 @@ import {
   SelectablePill,
 } from '@/components/create/create-form-ui';
 import { ThemedText } from '@/components/themed-text';
+import {
+  createPlacesSessionToken,
+  getPlaceSelection,
+  hasPlacesApiKey,
+  searchPlaceSuggestions,
+  type PlaceSelection,
+  type PlaceSuggestion,
+} from '@/services/places';
 import {
   buildCreatedActivityDateTime,
   isActivityPast,
@@ -53,7 +62,12 @@ export default function ActivityManagementScreen() {
   const [isEditing, setIsEditing] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [location, setLocation] = useState('');
+  const [locationQuery, setLocationQuery] = useState('');
+  const [placeSuggestions, setPlaceSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [selectedPlace, setSelectedPlace] = useState<PlaceSelection | null>(null);
+  const [locationSearchError, setLocationSearchError] = useState<string | null>(null);
+  const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
+  const [placesSessionToken, setPlacesSessionToken] = useState(createPlacesSessionToken());
   const [participantLimit, setParticipantLimit] = useState(4);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>('manual');
   const [visibility, setVisibility] = useState<Visibility>('public');
@@ -61,6 +75,63 @@ export default function ActivityManagementScreen() {
   const [selectedTime, setSelectedTime] = useState<Date | null>(null);
   const [activePicker, setActivePicker] = useState<DateTimePickerMode | null>(null);
   const [isEndConfirmVisible, setIsEndConfirmVisible] = useState(false);
+
+  useEffect(() => {
+    if (!isEditing) {
+      setPlaceSuggestions([]);
+      setLocationSearchError(null);
+      setIsSearchingPlaces(false);
+      return;
+    }
+
+    const trimmedQuery = locationQuery.trim();
+
+    if (!hasPlacesApiKey()) {
+      setPlaceSuggestions([]);
+      setIsSearchingPlaces(false);
+      return;
+    }
+
+    if (selectedPlace && trimmedQuery === selectedPlace.locationName) {
+      setPlaceSuggestions([]);
+      setIsSearchingPlaces(false);
+      return;
+    }
+
+    if (trimmedQuery.length < 2) {
+      setPlaceSuggestions([]);
+      setIsSearchingPlaces(false);
+      return;
+    }
+
+    let isActive = true;
+    setIsSearchingPlaces(true);
+
+    const timeoutId = setTimeout(() => {
+      void searchPlaceSuggestions(trimmedQuery, placesSessionToken).then(({ data, error }) => {
+        if (!isActive) {
+          return;
+        }
+
+        if (error) {
+          console.log('ActivityManagement.searchPlaceSuggestions error', error);
+          setLocationSearchError(error.message);
+          setPlaceSuggestions([]);
+          setIsSearchingPlaces(false);
+          return;
+        }
+
+        setLocationSearchError(null);
+        setPlaceSuggestions(data ?? []);
+        setIsSearchingPlaces(false);
+      });
+    }, 300);
+
+    return () => {
+      isActive = false;
+      clearTimeout(timeoutId);
+    };
+  }, [isEditing, locationQuery, placesSessionToken, selectedPlace]);
 
   if (!activity) {
     return (
@@ -97,7 +168,23 @@ export default function ActivityManagementScreen() {
   const beginEditing = () => {
     setTitle(activity.title);
     setDescription(activity.description);
-    setLocation(activity.location);
+    setLocationQuery(activity.location === 'Location TBD' ? '' : activity.location);
+    setSelectedPlace(
+      activity.location !== 'Location TBD' &&
+        typeof activity.latitude === 'number' &&
+        typeof activity.longitude === 'number'
+        ? {
+            placeId: activity.googlePlaceId ?? '',
+            locationName: activity.location,
+            locationAddress: activity.locationAddress ?? '',
+            latitude: activity.latitude,
+            longitude: activity.longitude,
+          }
+        : null
+    );
+    setPlaceSuggestions([]);
+    setLocationSearchError(null);
+    setPlacesSessionToken(createPlacesSessionToken());
     setParticipantLimit(activity.participantLimit);
     setApprovalMode(activity.approvalMode);
     setVisibility(activity.visibility);
@@ -108,12 +195,23 @@ export default function ActivityManagementScreen() {
 
   const cancelEditing = () => {
     setActivePicker(null);
+    setPlaceSuggestions([]);
+    setLocationSearchError(null);
     setIsEditing(false);
   };
 
   const saveEdits = () => {
     const nextDate = selectedDate ?? new Date(activity.date);
     const nextTime = selectedTime ?? new Date(activity.time);
+    const resolvedPlace = selectedPlace
+      ? selectedPlace
+      : {
+          placeId: '',
+          locationName: 'Location TBD',
+          locationAddress: '',
+          latitude: null,
+          longitude: null,
+        };
 
     if (participantLimit < activity.approvedParticipants.length) {
       Alert.alert(
@@ -126,7 +224,11 @@ export default function ActivityManagementScreen() {
     void updateActivity(activity.id, {
       title: title.trim() || `${activity.type} Meetup`,
       description: description.trim() || 'New activity created on Joinly.',
-      location: location.trim() || 'Location TBD',
+      location: resolvedPlace.locationName,
+      locationAddress: resolvedPlace.locationAddress || null,
+      googlePlaceId: resolvedPlace.placeId || null,
+      latitude: resolvedPlace.latitude ?? null,
+      longitude: resolvedPlace.longitude ?? null,
       participantLimit,
       approvalMode,
       visibility,
@@ -171,6 +273,44 @@ export default function ActivityManagementScreen() {
         );
       }
     });
+  };
+
+  const handleLocationQueryChange = (value: string) => {
+    setLocationQuery(value);
+    setSelectedPlace(null);
+    setLocationSearchError(null);
+  };
+
+  const handleSelectPlace = async (suggestion: PlaceSuggestion) => {
+    setIsSearchingPlaces(true);
+    const { data, error } = await getPlaceSelection(suggestion.placeId, placesSessionToken);
+    setIsSearchingPlaces(false);
+
+    if (error) {
+      console.log('ActivityManagement.getPlaceSelection error', error);
+      setLocationSearchError(error.message);
+      Alert.alert('Unable to select place', error.message);
+      return;
+    }
+
+    if (!data) {
+      Alert.alert('Unable to select place', 'This place could not be loaded.');
+      return;
+    }
+
+    setSelectedPlace(data);
+    setLocationQuery(data.locationName);
+    setPlaceSuggestions([]);
+    setLocationSearchError(null);
+    setPlacesSessionToken(createPlacesSessionToken());
+  };
+
+  const handleClearSelectedPlace = () => {
+    setSelectedPlace(null);
+    setLocationQuery('');
+    setPlaceSuggestions([]);
+    setLocationSearchError(null);
+    setPlacesSessionToken(createPlacesSessionToken());
   };
 
   return (
@@ -370,12 +510,20 @@ export default function ActivityManagementScreen() {
                 </FormSection>
 
                 <FormSection title="Location">
-                  <TextInput
-                    onChangeText={setLocation}
-                    placeholder="Cafe, park, or full address"
-                    placeholderTextColor="#8A8379"
-                    style={styles.textInput}
-                    value={location}
+                  <LocationAutocomplete
+                    errorMessage={locationSearchError}
+                    hasApiKey={hasPlacesApiKey()}
+                    isLoading={isSearchingPlaces}
+                    neutralBody="You can decide the exact place later."
+                    neutralTitle="Location TBD"
+                    onChangeQuery={handleLocationQueryChange}
+                    onClearSelection={handleClearSelectedPlace}
+                    onSelectSuggestion={(suggestion) => {
+                      void handleSelectPlace(suggestion);
+                    }}
+                    query={locationQuery}
+                    selectedPlace={selectedPlace}
+                    suggestions={placeSuggestions}
                   />
                 </FormSection>
 

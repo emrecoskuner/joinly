@@ -5,7 +5,7 @@ import DateTimePicker, {
 import * as Linking from 'expo-linking';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -24,8 +24,17 @@ import {
   OptionCard,
   SelectablePill,
 } from '@/components/create/create-form-ui';
+import { LocationAutocomplete } from '@/components/create/location-autocomplete';
 import { ACTIVITY_CATEGORIES } from '@/constants/activity-categories';
 import { ThemedText } from '@/components/themed-text';
+import {
+  createPlacesSessionToken,
+  getPlaceSelection,
+  hasPlacesApiKey,
+  searchPlaceSuggestions,
+  type PlaceSelection,
+  type PlaceSuggestion,
+} from '@/services/places';
 import type { Activity } from '@/store/activity-store';
 import { buildMockParticipants, useActivityStore } from '@/store/activity-store';
 
@@ -39,7 +48,12 @@ export default function CreateActivityScreen() {
   const [visibility, setVisibility] = useState<'public' | 'private'>('public');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [meetingPoint, setMeetingPoint] = useState('');
+  const [locationQuery, setLocationQuery] = useState('');
+  const [placeSuggestions, setPlaceSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [selectedPlace, setSelectedPlace] = useState<PlaceSelection | null>(null);
+  const [locationSearchError, setLocationSearchError] = useState<string | null>(null);
+  const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
+  const [placesSessionToken, setPlacesSessionToken] = useState(createPlacesSessionToken());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<Date | null>(null);
   const [activePicker, setActivePicker] = useState<DateTimePickerMode | null>(null);
@@ -47,8 +61,60 @@ export default function CreateActivityScreen() {
 
   const formattedDate = selectedDate ? formatDateLabel(selectedDate) : 'Select date';
   const formattedTime = selectedTime ? formatTimeLabel(selectedTime) : 'Select time';
-  const canOpenMaps = meetingPoint.trim().length > 0;
+  const canOpenMaps = Boolean(
+    selectedPlace?.locationAddress || selectedPlace?.locationName || locationQuery.trim()
+  );
   const pickerValue = getPickerValue(activePicker, selectedDate, selectedTime);
+
+  useEffect(() => {
+    const trimmedQuery = locationQuery.trim();
+
+    if (!hasPlacesApiKey()) {
+      setPlaceSuggestions([]);
+      setIsSearchingPlaces(false);
+      return;
+    }
+
+    if (selectedPlace && trimmedQuery === selectedPlace.locationName) {
+      setPlaceSuggestions([]);
+      setIsSearchingPlaces(false);
+      return;
+    }
+
+    if (trimmedQuery.length < 2) {
+      setPlaceSuggestions([]);
+      setIsSearchingPlaces(false);
+      return;
+    }
+
+    let isActive = true;
+    setIsSearchingPlaces(true);
+
+    const timeoutId = setTimeout(() => {
+      void searchPlaceSuggestions(trimmedQuery, placesSessionToken).then(({ data, error }) => {
+        if (!isActive) {
+          return;
+        }
+
+        if (error) {
+          console.log('CreateActivity.searchPlaceSuggestions error', error);
+          setLocationSearchError(error.message);
+          setPlaceSuggestions([]);
+          setIsSearchingPlaces(false);
+          return;
+        }
+
+        setLocationSearchError(null);
+        setPlaceSuggestions(data ?? []);
+        setIsSearchingPlaces(false);
+      });
+    }, 300);
+
+    return () => {
+      isActive = false;
+      clearTimeout(timeoutId);
+    };
+  }, [locationQuery, placesSessionToken, selectedPlace]);
 
   const openPicker = (mode: DateTimePickerMode) => {
     setActivePicker((currentValue: DateTimePickerMode | null) =>
@@ -77,10 +143,11 @@ export default function CreateActivityScreen() {
   };
 
   const openMapsForMeetingPoint = async () => {
-    const query = meetingPoint.trim();
+    const query =
+      selectedPlace?.locationAddress || selectedPlace?.locationName || locationQuery.trim();
 
     if (!query) {
-      Alert.alert('Meeting point needed', 'Enter a location before opening maps.');
+      Alert.alert('Meeting point needed', 'Search for a location before opening maps.');
       return;
     }
 
@@ -98,10 +165,58 @@ export default function CreateActivityScreen() {
     Alert.alert('Maps unavailable', 'This device could not open a maps app for that location.');
   };
 
+  const handleLocationQueryChange = (value: string) => {
+    setLocationQuery(value);
+    setSelectedPlace(null);
+    setLocationSearchError(null);
+  };
+
+  const handleSelectPlace = async (suggestion: PlaceSuggestion) => {
+    setIsSearchingPlaces(true);
+    const { data, error } = await getPlaceSelection(suggestion.placeId, placesSessionToken);
+    setIsSearchingPlaces(false);
+
+    if (error) {
+      console.log('CreateActivity.getPlaceSelection error', error);
+      setLocationSearchError(error.message);
+      Alert.alert('Unable to select place', error.message);
+      return;
+    }
+
+    if (!data) {
+      Alert.alert('Unable to select place', 'This place could not be loaded.');
+      return;
+    }
+
+    setSelectedPlace(data);
+    setLocationQuery(data.locationName);
+    setPlaceSuggestions([]);
+    setLocationSearchError(null);
+    setPlacesSessionToken(createPlacesSessionToken());
+  };
+
+  const handleClearSelectedPlace = () => {
+    setSelectedPlace(null);
+    setLocationQuery('');
+    setPlaceSuggestions([]);
+    setLocationSearchError(null);
+    setPlacesSessionToken(createPlacesSessionToken());
+  };
+
   const handleCreateActivity = () => {
     const fallbackStartAt = getFallbackStartAt();
     const dateValue = selectedDate ?? fallbackStartAt;
     const timeValue = selectedTime ?? fallbackStartAt;
+    const resolvedPlace = selectedPlace
+      ? selectedPlace
+      : {
+          placeId: '',
+          locationName: 'Location TBD',
+          locationAddress: '',
+          latitude: null,
+          longitude: null,
+        };
+
     const mockParticipants = buildMockParticipants(participantLimit);
     const activity: Activity = {
       id: `activity-${Date.now()}`,
@@ -109,7 +224,11 @@ export default function CreateActivityScreen() {
       title: title.trim() || `${selectedType} Meetup`,
       date: dateValue.toISOString(),
       time: timeValue.toISOString(),
-      location: meetingPoint.trim() || 'Location TBD',
+      location: resolvedPlace.locationName,
+      locationAddress: resolvedPlace.locationAddress || undefined,
+      googlePlaceId: resolvedPlace.placeId || undefined,
+      latitude: resolvedPlace.latitude ?? undefined,
+      longitude: resolvedPlace.longitude ?? undefined,
       participantLimit,
       approvalMode,
       visibility,
@@ -126,6 +245,10 @@ export default function CreateActivityScreen() {
       description: activity.description,
       type: activity.type,
       location_name: activity.location,
+      location_address: activity.locationAddress,
+      google_place_id: activity.googlePlaceId,
+      latitude: activity.latitude,
+      longitude: activity.longitude,
       starts_at: buildStartsAtPreview(dateValue, timeValue),
       ends_at: null,
       capacity: activity.participantLimit,
@@ -258,21 +381,21 @@ export default function CreateActivityScreen() {
               </FormSection>
 
               <FormSection title="Location">
-                <View style={styles.locationCard}>
-                  <View style={styles.locationIconWrap}>
-                    <MaterialIcons color="#5F594F" name="place" size={20} />
-                  </View>
-                  <View style={styles.locationTextBlock}>
-                    <ThemedText style={styles.locationLabel}>Meeting point</ThemedText>
-                    <TextInput
-                      onChangeText={setMeetingPoint}
-                      placeholder="Cafe, park, or full address"
-                      placeholderTextColor="#9B9287"
-                      style={styles.locationInput}
-                      value={meetingPoint}
-                    />
-                  </View>
-                </View>
+                <LocationAutocomplete
+                  errorMessage={locationSearchError}
+                  hasApiKey={hasPlacesApiKey()}
+                  isLoading={isSearchingPlaces}
+                  neutralBody="You can decide the exact place later."
+                  neutralTitle="Location TBD"
+                  onChangeQuery={handleLocationQueryChange}
+                  onClearSelection={handleClearSelectedPlace}
+                  onSelectSuggestion={(suggestion) => {
+                    void handleSelectPlace(suggestion);
+                  }}
+                  query={locationQuery}
+                  selectedPlace={selectedPlace}
+                  suggestions={placeSuggestions}
+                />
                 <Pressable
                   accessibilityRole="button"
                   disabled={!canOpenMaps}
@@ -660,54 +783,6 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     borderRadius: 20,
     backgroundColor: '#F6F3EE',
-  },
-  locationCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 14,
-    borderRadius: 24,
-    backgroundColor: '#FFFDFC',
-    borderWidth: 1,
-    borderColor: '#F2E9DE',
-    padding: 18,
-    shadowColor: '#1A1714',
-    shadowOpacity: 0.04,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 1,
-  },
-  locationIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F4EFE7',
-  },
-  locationTextBlock: {
-    flex: 1,
-    gap: 4,
-    paddingTop: 2,
-  },
-  locationLabel: {
-    color: '#746D63',
-    fontSize: 13,
-    lineHeight: 16,
-    fontWeight: '700',
-  },
-  locationValue: {
-    color: '#171411',
-    fontSize: 16,
-    lineHeight: 21,
-    fontWeight: '700',
-  },
-  locationInput: {
-    minHeight: 24,
-    paddingVertical: 0,
-    color: '#171411',
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: '600',
   },
   mapsButton: {
     minHeight: 54,

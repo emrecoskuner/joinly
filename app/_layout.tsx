@@ -10,6 +10,7 @@ import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ProfileStoreProvider, useProfileStore } from '@/store/profile-store';
 import { ActivityStoreProvider } from '@/store/activity-store';
+import { MapStoreProvider } from '@/store/map-store';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -22,10 +23,12 @@ export default function RootLayout() {
     <AuthProvider>
       <ProfileStoreProvider>
         <ActivityStoreProvider>
-          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-            <ProtectedNavigator />
-            <StatusBar style="auto" />
-          </ThemeProvider>
+          <MapStoreProvider>
+            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+              <ProtectedNavigator />
+              <StatusBar style="auto" />
+            </ThemeProvider>
+          </MapStoreProvider>
         </ActivityStoreProvider>
       </ProfileStoreProvider>
     </AuthProvider>

@@ -40,7 +40,13 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Joinly uses your location to show nearby activities on the map."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

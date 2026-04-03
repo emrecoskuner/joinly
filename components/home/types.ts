@@ -25,6 +25,8 @@ export type EventItem = {
   dateLabel: string;
   timeLabel: string;
   location: string;
+  latitude?: number;
+  longitude?: number;
   description?: string;
   notes?: string;
   hostId: string;
