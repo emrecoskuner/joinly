@@ -23,6 +23,7 @@ export type ActivityParticipant = {
 
 export type ActivityRecord = {
   id: string;
+  status: string;
   title: string;
   description: string;
   category: string;
@@ -214,6 +215,7 @@ export async function getActivities(currentUserId?: string): Promise<ServiceResp
         createdAt: activity.created_at ?? new Date().toISOString(),
         hostId: activity.host_id,
         host,
+        status: activity.status ?? 'active',
         approvedParticipants,
         pendingParticipants,
         currentUserStatus: resolveCurrentUserStatus(currentUserId, activity.host_id, currentUserParticipant),
@@ -467,7 +469,15 @@ function resolveCurrentUserStatus(
     return 'none';
   }
 
-  return isPendingStatus(currentUserParticipant.status) ? 'pending' : 'joined';
+  if (isPendingStatus(currentUserParticipant.status)) {
+    return 'pending';
+  }
+
+  if (isJoinedStatus(currentUserParticipant.status)) {
+    return 'joined';
+  }
+
+  return 'none';
 }
 
 function isJoinedStatus(status: string | null) {

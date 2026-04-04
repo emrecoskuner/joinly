@@ -11,6 +11,7 @@ import { AddActivityCard, MyActivityCard } from '@/components/home/my-activity-c
 import { SearchBar } from '@/components/home/search-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ACTIVITY_CATEGORIES } from '@/constants/activity-categories';
+import { shouldAppearInDiscovery } from '@/lib/activity-time';
 import { resolveEventParticipationStatus, useActivityStore } from '@/store/activity-store';
 import { useProfileStore } from '@/store/profile-store';
 import { formatProfileHandle } from '@/services/profiles';
@@ -19,6 +20,7 @@ export default function HomeScreen() {
   const {
     browseEvents,
     createdActivities,
+    currentTime,
     currentUserId,
     isLoadingActivities,
     participationByEventId,
@@ -31,23 +33,27 @@ export default function HomeScreen() {
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const normalizedQuery = deferredSearchQuery.trim().toLowerCase();
   const hasActiveSearch = normalizedQuery.length > 0;
-  const filteredCreatedActivities = createdActivities.filter((activity) =>
-    matchesSearchQuery(normalizedQuery, [
-      activity.title,
-      activity.type,
-      activity.location,
-      activity.description,
-    ])
+  const filteredCreatedActivities = createdActivities.filter(
+    (activity) =>
+      shouldAppearInDiscovery({ startsAt: activity.date, status: activity.status }, currentTime) &&
+      matchesSearchQuery(normalizedQuery, [
+        activity.title,
+        activity.type,
+        activity.location,
+        activity.description,
+      ])
   );
-  const filteredFeaturedEvents = browseEvents.filter((event) =>
-    matchesCategory(event.category, selectedCategory) &&
-    matchesSearchQuery(normalizedQuery, [
-      event.title,
-      event.activityType,
-      event.category,
-      event.location,
-      event.description,
-    ])
+  const filteredFeaturedEvents = browseEvents.filter(
+    (event) =>
+      shouldAppearInDiscovery({ startsAt: event.dateTimeIso, status: event.status }, currentTime) &&
+      matchesCategory(event.category, selectedCategory) &&
+      matchesSearchQuery(normalizedQuery, [
+        event.title,
+        event.activityType,
+        event.category,
+        event.location,
+        event.description,
+      ])
   );
   const hasResults = filteredCreatedActivities.length > 0 || filteredFeaturedEvents.length > 0;
 

@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { getActivityCategoryByLabel } from '@/constants/activity-categories';
 import { ThemedText } from '@/components/themed-text';
 import { EventItem } from '@/components/home/types';
+import { canJoinActivity, isHappeningNow } from '@/lib/activity-time';
 import type { ParticipationStatus } from '@/store/activity-store';
 
 type EventCardProps = {
@@ -23,6 +24,7 @@ export function EventCard({
   const category = getActivityCategoryByLabel(event.category);
   const accentColor = category.color;
   const statusLabel = getStatusLabel(participationStatus);
+  const isLive = isHappeningNow({ startsAt: event.dateTimeIso, status: event.status });
   const actionLabel = getActionLabel(event, participationStatus);
 
   return (
@@ -62,6 +64,7 @@ export function EventCard({
         </View>
 
         <View style={styles.detailsColumn}>
+          {isLive ? <StatusPill value="Happening now" variant="live" /> : null}
           {statusLabel ? <StatusPill value={statusLabel} /> : null}
           {!statusLabel && actionLabel && onStatusActionPress ? (
             <Pressable
@@ -109,10 +112,12 @@ function DetailPill({
   );
 }
 
-function StatusPill({ value }: { value: string }) {
+function StatusPill({ value, variant = 'default' }: { value: string; variant?: 'default' | 'live' }) {
   return (
-    <View style={styles.statusPill}>
-      <ThemedText style={styles.statusText}>{value}</ThemedText>
+    <View style={[styles.statusPill, variant === 'live' ? styles.liveStatusPill : null]}>
+      <ThemedText style={[styles.statusText, variant === 'live' ? styles.liveStatusText : null]}>
+        {value}
+      </ThemedText>
     </View>
   );
 }
@@ -132,10 +137,14 @@ function getStatusLabel(participationStatus: ParticipationStatus) {
 }
 
 function getActionLabel(
-  event: Pick<EventItem, 'privacyType'>,
+  event: Pick<EventItem, 'privacyType' | 'dateTimeIso' | 'status'>,
   participationStatus: ParticipationStatus
 ) {
   if (participationStatus !== 'none') {
+    return null;
+  }
+
+  if (!canJoinActivity({ startsAt: event.dateTimeIso, status: event.status })) {
     return null;
   }
 
@@ -268,6 +277,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '800',
+  },
+  liveStatusPill: {
+    backgroundColor: '#E7F4EE',
+  },
+  liveStatusText: {
+    color: '#2A6B59',
   },
   actionPill: {
     paddingHorizontal: 12,

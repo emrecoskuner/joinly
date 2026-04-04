@@ -2,8 +2,13 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { getActivityTimeState } from '@/lib/activity-time';
 import type { Activity } from '@/store/activity-store';
-import { formatActivitySchedule, getActivityAccentColor } from '@/store/activity-store';
+import {
+  buildCreatedActivityDateTime,
+  formatActivitySchedule,
+  getActivityAccentColor,
+} from '@/store/activity-store';
 
 type MyActivityCardProps = {
   activity: Activity;
@@ -16,6 +21,10 @@ type AddActivityCardProps = {
 
 export function MyActivityCard({ activity, onPress }: MyActivityCardProps) {
   const accentColor = getActivityAccentColor(activity.type);
+  const timeState = getActivityTimeState({
+    startsAt: buildCreatedActivityDateTime(activity),
+    status: activity.status,
+  });
 
   return (
     <Pressable
@@ -23,10 +32,17 @@ export function MyActivityCard({ activity, onPress }: MyActivityCardProps) {
       onPress={onPress}
       style={({ pressed }) => [styles.card, pressed && onPress ? styles.cardPressed : null]}>
       <View style={styles.cardHeader}>
-        <View style={[styles.typeBadge, { backgroundColor: `${accentColor}18` }]}>
-          <ThemedText style={[styles.typeBadgeText, { color: accentColor }]}>
-            {activity.type}
-          </ThemedText>
+        <View style={styles.badgeRow}>
+          <View style={[styles.typeBadge, { backgroundColor: `${accentColor}18` }]}>
+            <ThemedText style={[styles.typeBadgeText, { color: accentColor }]}>
+              {activity.type}
+            </ThemedText>
+          </View>
+          {timeState === 'happening-now' ? (
+            <View style={styles.happeningBadge}>
+              <ThemedText style={styles.happeningBadgeText}>Happening now</ThemedText>
+            </View>
+          ) : null}
         </View>
         <ThemedText style={styles.limitText}>Up to {activity.participantLimit}</ThemedText>
       </View>
@@ -90,8 +106,15 @@ const styles = StyleSheet.create({
   },
   cardHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
+    gap: 8,
+  },
+  badgeRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 8,
   },
   typeBadge: {
@@ -105,6 +128,18 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.3,
     textTransform: 'uppercase',
+  },
+  happeningBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#E7F4EE',
+  },
+  happeningBadgeText: {
+    color: '#2A6B59',
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '800',
   },
   limitText: {
     color: '#8B8378',

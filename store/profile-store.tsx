@@ -1,8 +1,8 @@
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
 import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabase';
 import {
-  buildEmptyProfile,
   getCurrentProfile,
   type ProfileRecord,
   type ProfileUpdatePayload,
@@ -46,19 +46,57 @@ export function ProfileStoreProvider({ children }: { children: ReactNode }) {
 
     if (nextError) {
       console.log('refreshProfile error', nextError);
-      setProfile(buildEmptyProfile(user.id));
+      setProfile(null);
       setError(nextError);
       setLoading(false);
       return;
     }
 
-    setProfile(data ?? buildEmptyProfile(user.id));
+    setProfile(data ?? null);
     setError(null);
     setLoading(false);
   };
 
   useEffect(() => {
     void refreshProfile();
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+
+    const channel = supabase
+      .channel(`profile-sync:${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${user.id}`,
+        },
+        () => {
+          void refreshProfile();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'activity_ratings',
+          filter: `to_user_id=eq.${user.id}`,
+        },
+        () => {
+          void refreshProfile();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   }, [user?.id]);
 
   const saveProfile = async (payload: ProfileUpdatePayload): Promise<SaveProfileResult> => {
@@ -76,7 +114,7 @@ export function ProfileStoreProvider({ children }: { children: ReactNode }) {
       return { error: nextError, profile: null };
     }
 
-    setProfile(data ?? buildEmptyProfile(user.id));
+    setProfile(data ?? null);
     setError(null);
     return { error: null, profile: data ?? null };
   };

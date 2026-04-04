@@ -30,18 +30,25 @@ export function ActivityHubCard({ activity, view, onPress }: ActivityHubCardProp
         pressed ? styles.cardPressed : null,
       ]}>
       <View style={styles.headerRow}>
-        <View
-          style={[
-            styles.rolePill,
-            activity.participationStatus === 'pending' ? styles.pendingPill : null,
-          ]}>
-          <ThemedText
+        <View style={styles.headerBadges}>
+          <View
             style={[
-              styles.roleText,
-              activity.participationStatus === 'pending' ? styles.pendingText : null,
+              styles.rolePill,
+              activity.participationStatus === 'pending' ? styles.pendingPill : null,
             ]}>
-            {roleLabel}
-          </ThemedText>
+            <ThemedText
+              style={[
+                styles.roleText,
+                activity.participationStatus === 'pending' ? styles.pendingText : null,
+              ]}>
+              {roleLabel}
+            </ThemedText>
+          </View>
+          {activity.isHappeningNow ? (
+            <View style={styles.livePill}>
+              <ThemedText style={styles.liveText}>Happening now</ThemedText>
+            </View>
+          ) : null}
         </View>
         <MaterialIcons color="#9A9388" name="chevron-right" size={18} />
       </View>
@@ -120,6 +127,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 12,
+  },
+  headerBadges: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   rolePill: {
     paddingHorizontal: 10,
@@ -138,6 +153,18 @@ const styles = StyleSheet.create({
   },
   pendingText: {
     color: '#5C4630',
+  },
+  livePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#E7F4EE',
+  },
+  liveText: {
+    color: '#2A6B59',
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '800',
   },
   title: {
     color: '#171411',

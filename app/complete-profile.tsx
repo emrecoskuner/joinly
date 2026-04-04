@@ -1,5 +1,5 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { type ReactNode, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
@@ -8,9 +8,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { SelectablePill } from '@/components/create/create-form-ui';
 import { ACTIVITY_CATEGORIES } from '@/constants/activity-categories';
 import { ThemedText } from '@/components/themed-text';
+import { useAuth } from '@/context/AuthContext';
 import { useProfileStore } from '@/store/profile-store';
 
 export default function CompleteProfileScreen() {
+  const { user, loading } = useAuth();
   const { profile, saveProfile, saving } = useProfileStore();
   const [fullName, setFullName] = useState(profile?.isComplete ? profile.fullName : '');
   const [username, setUsername] = useState(profile?.isComplete ? profile.username : '');
@@ -19,6 +21,14 @@ export default function CompleteProfileScreen() {
   const [occupation, setOccupation] = useState(profile?.occupation ?? '');
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatarUrl ?? '');
   const [interests, setInterests] = useState<string[]>(profile?.interests ?? []);
+
+  if (!loading && !user) {
+    return <Redirect href="/sign-in" />;
+  }
+
+  if (!loading && profile?.isComplete) {
+    return <Redirect href="/(tabs)/(home)" />;
+  }
 
   const toggleInterest = (interest: string) => {
     setInterests((currentValue) =>
@@ -29,6 +39,11 @@ export default function CompleteProfileScreen() {
   };
 
   const handleContinue = async () => {
+    if (!user?.id) {
+      router.replace('/sign-in');
+      return;
+    }
+
     if (!fullName.trim() || !username.trim() || !bio.trim()) {
       Alert.alert('Complete required fields', 'Full name, username, and bio are required.');
       return;

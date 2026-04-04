@@ -28,6 +28,7 @@ import {
   SelectablePill,
 } from '@/components/create/create-form-ui';
 import { ThemedText } from '@/components/themed-text';
+import { canJoinActivity, isHappeningNow, isPastActivity } from '@/lib/activity-time';
 import {
   createPlacesSessionToken,
   getPlaceSelection,
@@ -38,7 +39,6 @@ import {
 } from '@/services/places';
 import {
   buildCreatedActivityDateTime,
-  isActivityPast,
   mapActivityToEventItem,
   useActivityStore,
 } from '@/store/activity-store';
@@ -52,6 +52,7 @@ export default function ActivityManagementScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const {
     createdActivities,
+    currentTime,
     updateActivity,
     approveParticipant,
     rejectParticipant,
@@ -158,7 +159,13 @@ export default function ActivityManagementScreen() {
   const approvedCount = activity.approvedParticipants.length;
   const pendingCount = activity.pendingParticipants.length;
   const spotsLeft = Math.max(activity.participantLimit - approvedCount, 0);
-  const hasEnded = isActivityPast(buildCreatedActivityDateTime(activity));
+  const startsAt = buildCreatedActivityDateTime(activity);
+  const hasEnded = isPastActivity({ startsAt, status: activity.status }, currentTime);
+  const isLive = isHappeningNow({ startsAt, status: activity.status }, currentTime);
+  const canApproveNewParticipants = canJoinActivity(
+    { startsAt, status: activity.status },
+    currentTime
+  );
   const formattedDate = formatDateLabel(new Date(activity.date));
   const formattedTime = formatTimeLabel(new Date(activity.time));
   const editDateLabel = selectedDate ? formatDateLabel(selectedDate) : formattedDate;
@@ -265,6 +272,14 @@ export default function ActivityManagementScreen() {
   };
 
   const handleApprove = (participantId: string) => {
+    if (!canApproveNewParticipants) {
+      Alert.alert(
+        'Approvals closed',
+        'This activity has already started, so new approvals are no longer allowed.'
+      );
+      return;
+    }
+
     void approveParticipant(activity.id, participantId).then((wasApproved) => {
       if (!wasApproved) {
         Alert.alert(
@@ -378,8 +393,15 @@ export default function ActivityManagementScreen() {
             <View style={styles.heroCard}>
               <View style={styles.heroHeader}>
                 <View style={styles.heroCopy}>
-                  <View style={styles.typeBadge}>
-                    <ThemedText style={styles.typeBadgeText}>{activity.type}</ThemedText>
+                  <View style={styles.badgeRow}>
+                    <View style={styles.typeBadge}>
+                      <ThemedText style={styles.typeBadgeText}>{activity.type}</ThemedText>
+                    </View>
+                    {isLive ? (
+                      <View style={styles.happeningBadge}>
+                        <ThemedText style={styles.happeningBadgeText}>Happening now</ThemedText>
+                      </View>
+                    ) : null}
                   </View>
                   <ThemedText style={styles.heroTitle}>{activity.title}</ThemedText>
                   <ThemedText style={styles.heroSubtitle}>
@@ -713,6 +735,9 @@ export default function ActivityManagementScreen() {
                 <ThemedText style={styles.sectionTitle}>Pending Requests</ThemedText>
                 <ThemedText style={styles.sectionHint}>{pendingCount} waiting</ThemedText>
               </View>
+              {!canApproveNewParticipants ? (
+                <HelperCard body="This activity has already started, so new join approvals are closed." />
+              ) : null}
               {spotsLeft === 0 ? (
                 <HelperCard body="This activity is currently full. Remove someone or increase the participant limit before approving another request." />
               ) : null}
@@ -732,9 +757,11 @@ export default function ActivityManagementScreen() {
                         });
                       }}
                       participant={participant}
-                      primaryActionLabel="Approve"
+                      primaryActionLabel={canApproveNewParticipants ? 'Approve' : undefined}
                       secondaryActionLabel="Reject"
-                      onPrimaryAction={() => handleApprove(participant.id)}
+                      onPrimaryAction={
+                        canApproveNewParticipants ? () => handleApprove(participant.id) : undefined
+                      }
                       onSecondaryAction={() => {
                         void rejectParticipant(activity.id, participant.id).then(({ error }) => {
                           if (error) {
@@ -942,6 +969,12 @@ const styles = StyleSheet.create({
   heroCopy: {
     gap: 10,
   },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
   typeBadge: {
     alignSelf: 'flex-start',
     paddingHorizontal: 12,
@@ -955,6 +988,18 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     fontWeight: '800',
     letterSpacing: 0.2,
+  },
+  happeningBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#E7F4EE',
+  },
+  happeningBadgeText: {
+    color: '#2A6B59',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
   },
   heroTitle: {
     color: '#171411',

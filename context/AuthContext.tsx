@@ -21,10 +21,72 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let isActive = true;
+
+    const clearInvalidSession = async () => {
+      try {
+        const { error } = await supabase.auth.signOut({ scope: 'local' });
+
+        if (error) {
+          console.log('auth.clearInvalidSession error', error);
+        }
+      } catch (error) {
+        console.log('auth.clearInvalidSession unexpected error', error);
+      }
+    };
+
+    const applySignedOutState = () => {
+      if (!isActive) {
+        return;
+      }
+
+      setSession(null);
+      setUser(null);
+      setLoading(false);
+    };
+
+    const validateAndApplySession = async (nextSession: Session | null) => {
+      if (!nextSession) {
+        applySignedOutState();
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase.auth.getUser();
+
+        if (error) {
+          console.log('auth.getUser validation error', error);
+          await clearInvalidSession();
+          applySignedOutState();
+          return;
+        }
+
+        const validatedUser = data.user;
+
+        if (!validatedUser || validatedUser.id !== nextSession.user.id) {
+          console.log('auth.validateAndApplySession invalid user', Boolean(validatedUser));
+          await clearInvalidSession();
+          applySignedOutState();
+          return;
+        }
+
+        if (!isActive) {
+          return;
+        }
+
+        setSession(nextSession);
+        setUser(validatedUser);
+        setLoading(false);
+      } catch (error) {
+        console.log('auth.validateAndApplySession unexpected error', error);
+        await clearInvalidSession();
+        applySignedOutState();
+      }
+    };
 
     const restoreSession = async () => {
       try {
@@ -32,19 +94,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (error) {
           console.log('auth.getSession error', error);
+          applySignedOutState();
+          return;
         }
 
-        if (isActive) {
-          setSession(data.session ?? null);
-          setLoading(false);
-        }
+        await validateAndApplySession(data.session ?? null);
       } catch (error) {
         console.log('auth.restoreSession unexpected error', error);
-
-        if (isActive) {
-          setSession(null);
-          setLoading(false);
-        }
+        applySignedOutState();
       }
     };
 
@@ -55,12 +112,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange((event, nextSession) => {
       console.log('auth.onAuthStateChange', event, Boolean(nextSession));
 
-      if (!isActive) {
-        return;
-      }
-
-      setSession(nextSession);
-      setLoading(false);
+      setLoading(true);
+      void validateAndApplySession(nextSession);
     });
 
     return () => {
@@ -72,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
-      user: session?.user ?? null,
+      user,
       loading,
       signIn: async (email, password) => {
         try {
@@ -146,7 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       },
     }),
-    [loading, session]
+    [loading, session, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

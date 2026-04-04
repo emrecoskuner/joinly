@@ -1,4 +1,5 @@
 import type { EventItem } from '@/components/home/types';
+import { getActivityTimeState, isHappeningNow, isPastActivity } from '@/lib/activity-time';
 import {
   buildCreatedActivityDateTime,
   type Activity,
@@ -14,6 +15,7 @@ export type ActivityHubItem = {
   shortLocation: string;
   participationStatus: Exclude<ParticipationStatus, 'none'>;
   isPast: boolean;
+  isHappeningNow: boolean;
   participantCount?: number;
   hostName?: string;
   hostInitials?: string;
@@ -24,7 +26,8 @@ export function getActivityHubItems(
   events: EventItem[] = [],
   createdActivities: Activity[] = [],
   participationByEventId: Record<string, Exclude<ParticipationStatus, 'hosting'>> = {},
-  currentUserId = ''
+  currentUserId = '',
+  currentTime = Date.now()
 ) {
   const safeCreatedActivities = Array.isArray(createdActivities) ? createdActivities : [];
   const safeEvents = Array.isArray(events) ? events : [];
@@ -48,7 +51,11 @@ export function getActivityHubItems(
       timeLabel: `${event.dateLabel} • ${event.timeLabel}`,
       shortLocation: event.location,
       participationStatus,
-      isPast: new Date(event.dateTimeIso).getTime() < Date.now(),
+      isPast: isPastActivity({ startsAt: event.dateTimeIso, status: event.status }, currentTime),
+      isHappeningNow: isHappeningNow(
+        { startsAt: event.dateTimeIso, status: event.status },
+        currentTime
+      ),
       participantCount: event.participantCount,
       hostName: event.hostName,
       hostInitials: event.hostInitials,
@@ -59,7 +66,10 @@ export function getActivityHubItems(
   return [
     ...safeCreatedActivities.map((activity) => {
       const dateTimeIso = buildCreatedActivityDateTime(activity);
-      const isPast = new Date(dateTimeIso).getTime() < Date.now();
+      const timeState = getActivityTimeState(
+        { startsAt: dateTimeIso, status: activity.status },
+        currentTime
+      );
 
       return {
         id: activity.id,
@@ -68,7 +78,8 @@ export function getActivityHubItems(
         timeLabel: formatDateTimeLabel(dateTimeIso),
         shortLocation: activity.location,
         participationStatus: 'hosting' as const,
-        isPast,
+        isPast: timeState === 'past',
+        isHappeningNow: timeState === 'happening-now',
         participantCount: activity.approvedParticipants.length,
         detailRoute: '/activity/[id]' as const,
       };

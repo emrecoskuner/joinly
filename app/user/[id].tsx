@@ -7,6 +7,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ACTIVITY_CATEGORIES } from '@/constants/activity-categories';
+import { TrustFeedbackList } from '@/components/profile/trust-feedback-list';
 import { ThemedText } from '@/components/themed-text';
 import { formatProfileHandle, formatProfileShortInfo, getProfileById, type ProfileRecord } from '@/services/profiles';
 
@@ -143,13 +144,10 @@ export default function UserProfileScreen() {
 
           <View style={styles.section}>
             <ThemedText style={styles.sectionTitle}>Trust Feedback</ThemedText>
-            <View style={styles.commentsCard}>
-              <View style={styles.commentItem}>
-                <ThemedText style={styles.commentText}>
-                  Written comments are not available in the current schema yet. Rating totals above come from the live profile record.
-                </ThemedText>
-              </View>
-            </View>
+            <TrustFeedbackList
+              emptyMessage="No written trust feedback yet."
+              items={profile.trustFeedback}
+            />
           </View>
         </ScrollView>
       </SafeAreaView>

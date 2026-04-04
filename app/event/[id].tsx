@@ -8,11 +8,11 @@ import { useState } from 'react';
 
 import { getActivityCategoryByLabel } from '@/constants/activity-categories';
 import { ThemedText } from '@/components/themed-text';
+import { canJoinActivity, isHappeningNow, isPastActivity } from '@/lib/activity-time';
 import {
   buildCreatedActivityDateTime,
   canAccessActivityChat,
   isActivityEnded,
-  isActivityPast,
   mapActivityToEventItem,
   resolveEventParticipationStatus,
   syncEventParticipationForCurrentUser,
@@ -25,6 +25,7 @@ export default function EventDetailScreen() {
   const {
     browseEvents,
     createdActivities,
+    currentTime,
     currentUserId,
     currentUserParticipant,
     endedActivitiesById,
@@ -87,9 +88,15 @@ export default function EventDetailScreen() {
     : resolveEventParticipationStatus(event, participationByEventId, currentUserId);
   const statusCopy = getParticipationStateCopy(participationStatus);
   const hasChatAccess = !isEnded && canAccessActivityChat(participationStatus);
-  const hasEnded = isEnded || isActivityPast(event.dateTimeIso);
+  const isPast = isPastActivity({ startsAt: event.dateTimeIso, status: event.status }, currentTime);
+  const isLive = isHappeningNow({ startsAt: event.dateTimeIso, status: event.status }, currentTime);
+  const isJoinable = canJoinActivity(
+    { startsAt: event.dateTimeIso, status: event.status },
+    currentTime
+  );
+  const hasEnded = isEnded || isPast;
   const canLeave = participationStatus === 'joined' && !hasEnded;
-  const canEndActivity = !isEnded && participationStatus === 'hosting';
+  const canEndActivity = !hasEnded && participationStatus === 'hosting';
 
   const handleLeave = () => {
     setConfirmAction('leave');
@@ -165,15 +172,22 @@ export default function EventDetailScreen() {
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.heroCard}>
             <View style={styles.heroHeader}>
+              <View style={styles.heroHeaderBadges}>
                 <View style={[styles.categoryPill, { backgroundColor: accentColor }]}>
-                {category ? (
-                  <MaterialIcons
-                    color="#FFFDFC"
-                    name={category.icon as keyof typeof MaterialIcons.glyphMap}
-                    size={14}
-                  />
+                  {category ? (
+                    <MaterialIcons
+                      color="#FFFDFC"
+                      name={category.icon as keyof typeof MaterialIcons.glyphMap}
+                      size={14}
+                    />
+                  ) : null}
+                  <ThemedText style={styles.categoryPillText}>{event.category}</ThemedText>
+                </View>
+                {isLive ? (
+                  <View style={styles.happeningPill}>
+                    <ThemedText style={styles.happeningPillText}>Happening now</ThemedText>
+                  </View>
                 ) : null}
-                <ThemedText style={styles.categoryPillText}>{event.category}</ThemedText>
               </View>
               <View style={styles.privacyPill}>
                 <MaterialIcons color="#4E4A43" name="shield" size={14} />
@@ -205,7 +219,7 @@ export default function EventDetailScreen() {
                   This activity has been cancelled and is no longer active.
                 </ThemedText>
               </View>
-            ) : participationStatus === 'none' ? (
+            ) : participationStatus === 'none' && isJoinable ? (
               <Pressable
                 accessibilityRole="button"
                 onPress={() => {
@@ -225,8 +239,27 @@ export default function EventDetailScreen() {
                   {isPrivateActivity ? 'Request to Join' : 'Join Activity'}
                 </ThemedText>
               </Pressable>
+            ) : participationStatus === 'none' ? (
+              <View style={styles.statusCard}>
+                <ThemedText style={styles.statusCardLabel}>
+                  {isLive ? 'Happening now' : 'Past activity'}
+                </ThemedText>
+                <ThemedText style={styles.statusCardText}>
+                  {isLive
+                    ? 'This activity has already started, so new join requests are closed.'
+                    : 'This activity is no longer joinable.'}
+                </ThemedText>
+              </View>
             ) : (
               <View style={styles.statusStack}>
+                {isLive ? (
+                  <View style={styles.statusCard}>
+                    <ThemedText style={styles.statusCardLabel}>Happening now</ThemedText>
+                    <ThemedText style={styles.statusCardText}>
+                      This activity is in progress and stays visible here during its live window.
+                    </ThemedText>
+                  </View>
+                ) : null}
                 <View style={styles.statusCard}>
                   <ThemedText style={styles.statusCardLabel}>{statusCopy.label}</ThemedText>
                   <ThemedText style={styles.statusCardText}>{statusCopy.body}</ThemedText>
@@ -524,6 +557,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
+  heroHeaderBadges: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
   categoryPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -534,6 +574,18 @@ const styles = StyleSheet.create({
   },
   categoryPillText: {
     color: '#FFFDFC',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+  },
+  happeningPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#E7F4EE',
+  },
+  happeningPillText: {
+    color: '#2A6B59',
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '800',

@@ -1,3 +1,10 @@
+import { isPastActivity, shouldAppearInDiscovery } from '@/lib/activity-time';
+import {
+  getReceivedRatingSummary,
+  getTrustFeedbackForUser,
+  type ReceivedRatingSummary,
+  type TrustFeedbackItem,
+} from '@/services/ratings';
 import { supabase } from '@/lib/supabase';
 
 export type ProfileRow = {
@@ -34,6 +41,7 @@ export type ProfileRecord = {
   updatedAt: string | null;
   initials: string;
   isComplete: boolean;
+  trustFeedback: TrustFeedbackItem[];
 };
 
 export type ProfileUpdatePayload = {
@@ -81,27 +89,74 @@ const PROFILE_SELECT =
   'id, full_name, username, bio, avatar_url, age, occupation, interests, rating_avg, rating_count, hosted_count, joined_count, created_at, updated_at';
 
 export async function getCurrentProfile(userId: string): Promise<ServiceResponse<ProfileRecord>> {
-  return getProfileById(userId);
+  try {
+    const [
+      { data, error },
+      { data: trustFeedback, error: trustFeedbackError },
+      { data: ratingSummary, error: ratingSummaryError },
+    ] = await Promise.all([
+      supabase.from('profiles').select(PROFILE_SELECT).eq('id', userId).maybeSingle<ProfileRow>(),
+      getTrustFeedbackForUser(userId),
+      getReceivedRatingSummary(userId),
+    ]);
+
+    if (error) {
+      console.log('getCurrentProfile error', error);
+      return { data: null, error };
+    }
+
+    if (trustFeedbackError) {
+      console.log('getCurrentProfile.trustFeedback error', trustFeedbackError);
+      return { data: null, error: trustFeedbackError };
+    }
+
+    if (ratingSummaryError) {
+      console.log('getCurrentProfile.ratingSummary error', ratingSummaryError);
+      return { data: null, error: ratingSummaryError };
+    }
+
+    if (!data) {
+      return { data: null, error: null };
+    }
+
+    return { data: mapProfileRow(data, trustFeedback ?? [], ratingSummary ?? undefined), error: null };
+  } catch (error) {
+    console.log('getCurrentProfile unexpected error', error);
+    return { data: null, error: toError(error) };
+  }
 }
 
 export async function getProfileById(userId: string): Promise<ServiceResponse<ProfileRecord>> {
   try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select(PROFILE_SELECT)
-      .eq('id', userId)
-      .maybeSingle<ProfileRow>();
+    const [
+      { data, error },
+      { data: trustFeedback, error: trustFeedbackError },
+      { data: ratingSummary, error: ratingSummaryError },
+    ] = await Promise.all([
+      supabase.from('profiles').select(PROFILE_SELECT).eq('id', userId).maybeSingle<ProfileRow>(),
+      getTrustFeedbackForUser(userId),
+      getReceivedRatingSummary(userId),
+    ]);
 
     if (error) {
       console.log('getProfileById error', error);
       return { data: null, error };
     }
 
-    if (!data) {
-      return { data: buildEmptyProfile(userId), error: null };
+    if (trustFeedbackError) {
+      console.log('getProfileById.trustFeedback error', trustFeedbackError);
+      return { data: null, error: trustFeedbackError };
     }
 
-    return { data: mapProfileRow(data), error: null };
+    if (ratingSummaryError) {
+      console.log('getProfileById.ratingSummary error', ratingSummaryError);
+      return { data: null, error: ratingSummaryError };
+    }
+
+    return {
+      data: data ? mapProfileRow(data, trustFeedback ?? [], ratingSummary ?? undefined) : null,
+      error: null,
+    };
   } catch (error) {
     console.log('getProfileById unexpected error', error);
     return { data: null, error: toError(error) };
@@ -113,32 +168,53 @@ export async function updateProfile(
   payload: ProfileUpdatePayload
 ): Promise<ServiceResponse<ProfileRecord>> {
   try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .upsert(
-        {
-          id: userId,
-          full_name: normalizeNullableText(payload.fullName),
-          username: normalizeUsername(payload.username),
-          bio: normalizeNullableText(payload.bio),
-          age: payload.age,
-          occupation: normalizeNullableText(payload.occupation),
-          interests: payload.interests,
-          avatar_url: normalizeNullableText(payload.avatarUrl),
-        },
-        {
-          onConflict: 'id',
-        }
-      )
-      .select(PROFILE_SELECT)
-      .single<ProfileRow>();
+    const [
+      { data, error },
+      { data: trustFeedback, error: trustFeedbackError },
+      { data: ratingSummary, error: ratingSummaryError },
+    ] = await Promise.all([
+      supabase
+        .from('profiles')
+        .upsert(
+          {
+            id: userId,
+            full_name: normalizeNullableText(payload.fullName),
+            username: normalizeUsername(payload.username),
+            bio: normalizeNullableText(payload.bio),
+            age: payload.age,
+            occupation: normalizeNullableText(payload.occupation),
+            interests: payload.interests,
+            avatar_url: normalizeNullableText(payload.avatarUrl),
+          },
+          {
+            onConflict: 'id',
+          }
+        )
+        .select(PROFILE_SELECT)
+        .single<ProfileRow>(),
+      getTrustFeedbackForUser(userId),
+      getReceivedRatingSummary(userId),
+    ]);
 
     if (error) {
       console.log('updateProfile error', error);
       return { data: null, error };
     }
 
-    return { data: mapProfileRow(data), error: null };
+    if (trustFeedbackError) {
+      console.log('updateProfile.trustFeedback error', trustFeedbackError);
+      return { data: null, error: trustFeedbackError };
+    }
+
+    if (ratingSummaryError) {
+      console.log('updateProfile.ratingSummary error', ratingSummaryError);
+      return { data: null, error: ratingSummaryError };
+    }
+
+    return {
+      data: mapProfileRow(data, trustFeedback ?? [], ratingSummary ?? undefined),
+      error: null,
+    };
   } catch (error) {
     console.log('updateProfile unexpected error', error);
     return { data: null, error: toError(error) };
@@ -218,27 +294,6 @@ export async function getProfileActivityCollections(
   }
 }
 
-export function buildEmptyProfile(userId: string): ProfileRecord {
-  return {
-    id: userId,
-    fullName: 'New user',
-    username: 'newuser',
-    bio: 'No bio yet',
-    avatarUrl: '',
-    age: null,
-    occupation: '',
-    interests: [],
-    ratingAvg: 0,
-    ratingCount: 0,
-    hostedCount: 0,
-    joinedCount: 0,
-    createdAt: null,
-    updatedAt: null,
-    initials: 'NU',
-    isComplete: false,
-  };
-}
-
 export function formatProfileHandle(username: string) {
   return `@${username || 'newuser'}`;
 }
@@ -253,7 +308,11 @@ export function formatProfileShortInfo(profile: Pick<ProfileRecord, 'occupation'
   return formatProfileHandle(profile.username);
 }
 
-function mapProfileRow(row: ProfileRow): ProfileRecord {
+function mapProfileRow(
+  row: ProfileRow,
+  trustFeedback: TrustFeedbackItem[] = [],
+  ratingSummary?: ReceivedRatingSummary
+): ProfileRecord {
   const rawFullName = row.full_name?.trim() ?? '';
   const rawUsername = normalizeUsername(row.username ?? '');
   const rawBio = row.bio?.trim() ?? '';
@@ -270,14 +329,21 @@ function mapProfileRow(row: ProfileRow): ProfileRecord {
     age: row.age ?? null,
     occupation: row.occupation?.trim() ?? '',
     interests: Array.isArray(row.interests) ? row.interests.filter(Boolean) : [],
-    ratingAvg: Number(row.rating_avg ?? 0),
-    ratingCount: row.rating_count ?? 0,
+    ratingAvg:
+      ratingSummary && ratingSummary.ratingCount > 0
+        ? ratingSummary.ratingAvg
+        : Number(row.rating_avg ?? 0),
+    ratingCount:
+      ratingSummary && ratingSummary.ratingCount > 0
+        ? ratingSummary.ratingCount
+        : row.rating_count ?? 0,
     hostedCount: row.hosted_count ?? 0,
     joinedCount: row.joined_count ?? 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     initials: getInitials(fullName),
     isComplete: Boolean(rawFullName && rawUsername && rawBio),
+    trustFeedback,
   };
 }
 
@@ -286,8 +352,9 @@ function mapActivityRowToProfileItem(
   flags: { hostedByMe: boolean; joinedByMe: boolean }
 ): ProfileActivityItem {
   const startsAt = activity.starts_at ?? new Date().toISOString();
-  const timestamp = new Date(startsAt).getTime();
-  const isUpcoming = (activity.status ?? '') === 'active' && timestamp >= Date.now();
+  const timing = { startsAt, status: activity.status };
+  const isUpcoming = shouldAppearInDiscovery(timing);
+  const isPast = isPastActivity(timing);
 
   return {
     id: activity.id,
@@ -297,7 +364,7 @@ function mapActivityRowToProfileItem(
     location: activity.location_name?.trim() || 'Location TBD',
     hostedByMe: flags.hostedByMe,
     joinedByMe: flags.joinedByMe,
-    isPast: !isUpcoming,
+    isPast,
     isUpcoming,
   };
 }

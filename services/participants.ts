@@ -139,9 +139,13 @@ export async function removeParticipant(
   try {
     const { error } = await supabase
       .from('activity_participants')
-      .delete()
+      .update({
+        status: 'removed',
+        updated_at: new Date().toISOString(),
+      })
       .eq('activity_id', activity_id)
-      .eq('user_id', user_id);
+      .eq('user_id', user_id)
+      .neq('role', 'host');
 
     if (error) {
       console.log('removeParticipant error', error);

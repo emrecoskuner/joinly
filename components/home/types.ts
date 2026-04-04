@@ -19,6 +19,7 @@ export type EventItem = {
   id: string;
   title: string;
   dateTimeIso: string;
+  status?: string;
   category: string;
   activityType: string;
   time: string;

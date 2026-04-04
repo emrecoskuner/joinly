@@ -18,6 +18,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ACTIVITY_CATEGORIES } from '@/constants/activity-categories';
 import { JoinlyMap } from '@/components/map/joinly-map';
 import type { MapActivityMarker } from '@/components/map/joinly-map.types';
+import { shouldAppearInDiscovery } from '@/lib/activity-time';
 import {
   buildMapRegion,
   DEFAULT_MAP_REGION,
@@ -44,7 +45,8 @@ export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView | null>(null);
   const hasStoredRegionRef = useRef(false);
-  const { browseEvents, createdActivities, currentUserId, isLoadingActivities } = useActivityStore();
+  const { browseEvents, createdActivities, currentTime, currentUserId, isLoadingActivities } =
+    useActivityStore();
   const {
     mode,
     region,
@@ -116,6 +118,10 @@ export default function MapScreen() {
     return uniqueEvents
       .filter(
         (event) =>
+          shouldAppearInDiscovery(
+            { startsAt: event.dateTimeIso, status: event.status },
+            currentTime
+          ) &&
           event.location !== 'Location TBD' &&
           hasValidCoordinates(event.latitude, event.longitude)
       )
@@ -155,7 +161,7 @@ export default function MapScreen() {
 
         return new Date(left.dateTimeIso).getTime() - new Date(right.dateTimeIso).getTime();
       });
-  }, [browseEvents, createdActivities, currentUserId, userLocation]);
+  }, [browseEvents, createdActivities, currentTime, currentUserId, userLocation]);
 
   const availableCategoryLabels = useMemo(
     () =>

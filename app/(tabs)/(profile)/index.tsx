@@ -7,6 +7,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ACTIVITY_CATEGORIES } from '@/constants/activity-categories';
+import { TrustFeedbackList } from '@/components/profile/trust-feedback-list';
 import { ThemedText } from '@/components/themed-text';
 import { useAuth } from '@/context/AuthContext';
 import {
@@ -214,13 +215,10 @@ export default function ProfileScreen() {
 
           <View style={styles.section}>
             <ThemedText style={styles.sectionTitle}>Trust Feedback</ThemedText>
-            <View style={styles.commentsCard}>
-              <View style={styles.commentItem}>
-                <ThemedText style={styles.commentText}>
-                  Ratings are live from your profile record. Written feedback is not available in the current schema yet.
-                </ThemedText>
-              </View>
-            </View>
+            <TrustFeedbackList
+              emptyMessage="Written trust feedback will show up here after people review completed activities."
+              items={profile.trustFeedback}
+            />
           </View>
 
           <Pressable

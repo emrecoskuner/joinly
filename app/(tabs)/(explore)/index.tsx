@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { canJoinActivity } from '@/lib/activity-time';
 import { ActivityHubCard } from '@/components/activities/activity-hub-card';
 import { getActivityHubItems, type ActivityHubItem } from '@/components/activities/mock-activity-hub';
 import { ThemedText } from '@/components/themed-text';
@@ -18,7 +19,8 @@ const SEGMENTS: { key: SegmentKey; label: string }[] = [
 ];
 
 export default function ActivitiesScreen() {
-  const { browseEvents, createdActivities, currentUserId, participationByEventId } = useActivityStore();
+  const { browseEvents, createdActivities, currentTime, currentUserId, participationByEventId } =
+    useActivityStore();
   const [activeSegment, setActiveSegment] = useState<SegmentKey>('upcoming');
   const items = useMemo(
     () =>
@@ -26,11 +28,12 @@ export default function ActivitiesScreen() {
         browseEvents ?? [],
         createdActivities ?? [],
         participationByEventId ?? {},
-        currentUserId
+        currentUserId,
+        currentTime
       ),
-    [browseEvents, createdActivities, currentUserId, participationByEventId]
+    [browseEvents, createdActivities, currentTime, currentUserId, participationByEventId]
   );
-  const filteredItems = getFilteredItems(items, activeSegment);
+  const filteredItems = getFilteredItems(items, activeSegment, currentTime);
 
   return (
     <View style={styles.screen}>
@@ -110,11 +113,15 @@ export default function ActivitiesScreen() {
   );
 }
 
-function getFilteredItems(items: ActivityHubItem[], segment: SegmentKey) {
+function getFilteredItems(items: ActivityHubItem[], segment: SegmentKey, currentTime: number) {
   switch (segment) {
     case 'pending':
       return items
-        .filter((activity) => activity.participationStatus === 'pending')
+        .filter(
+          (activity) =>
+            activity.participationStatus === 'pending' &&
+            canJoinActivity({ startsAt: activity.dateTimeIso }, currentTime)
+        )
         .sort((a, b) => new Date(a.dateTimeIso).getTime() - new Date(b.dateTimeIso).getTime());
     case 'past':
       return items

@@ -1,7 +1,12 @@
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { EventItem, PrivacyType } from '@/components/home/types';
 import { useAuth } from '@/context/AuthContext';
+import {
+  canJoinActivity,
+  isPastActivity,
+} from '@/lib/activity-time';
+import { supabase } from '@/lib/supabase';
 import {
   createActivity as createActivityService,
   endActivity as endActivityService,
@@ -37,6 +42,7 @@ export type ParticipationStatus = 'none' | 'pending' | 'joined' | 'hosting';
 export type Activity = {
   id: string;
   hostId?: string;
+  status?: string;
   type: string;
   title: string;
   date: string;
@@ -67,6 +73,7 @@ type MutationResponse = {
 type ActivityStoreValue = {
   currentUserId: string;
   currentUserParticipant: Participant | null;
+  currentTime: number;
   browseEvents: EventItem[];
   createdActivities: Activity[];
   participationByEventId: Record<string, Exclude<ParticipationStatus, 'hosting'>>;
@@ -120,13 +127,18 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
   const [activityRecords, setActivityRecords] = useState<ActivityRecord[]>([]);
   const [endedActivitiesById, setEndedActivitiesById] = useState<Record<string, EventItem>>({});
   const [isLoadingActivities, setIsLoadingActivities] = useState(true);
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  const realtimeRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const refreshActivities = async () => {
-    setIsLoadingActivities(true);
+  const fetchActivities = async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
+    if (showLoading) {
+      setIsLoadingActivities(true);
+    }
+
     const { data, error } = await getActivities(currentUserId || undefined);
 
     if (error) {
-      console.log('refreshActivities error', error);
+      console.log('fetchActivities error', error);
       setActivityRecords([]);
       setIsLoadingActivities(false);
       return;
@@ -136,8 +148,69 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
     setIsLoadingActivities(false);
   };
 
+  const refreshActivities = async () => {
+    await fetchActivities();
+  };
+
   useEffect(() => {
     void refreshActivities();
+  }, [currentUserId]);
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 15_000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    const scheduleRealtimeRefresh = () => {
+      if (realtimeRefreshTimeoutRef.current) {
+        clearTimeout(realtimeRefreshTimeoutRef.current);
+      }
+
+      realtimeRefreshTimeoutRef.current = setTimeout(() => {
+        void fetchActivities({ showLoading: false });
+      }, 150);
+    };
+
+    const channel = supabase
+      .channel(`activity-sync:${currentUserId || 'guest'}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'activities',
+        },
+        () => {
+          scheduleRealtimeRefresh();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'activity_participants',
+        },
+        () => {
+          scheduleRealtimeRefresh();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (realtimeRefreshTimeoutRef.current) {
+        clearTimeout(realtimeRefreshTimeoutRef.current);
+        realtimeRefreshTimeoutRef.current = null;
+      }
+
+      void supabase.removeChannel(channel);
+    };
   }, [currentUserId]);
 
   const createdActivities = useMemo(
@@ -246,6 +319,10 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
       return false;
     }
 
+    if (!canJoinActivity({ startsAt: activity.startsAt, status: activity.status })) {
+      return false;
+    }
+
     if (activity.approvedParticipants.length >= activity.participantLimit) {
       return false;
     }
@@ -312,6 +389,10 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
       return { error: new Error('Activity not found.') };
     }
 
+    if (!canJoinActivity({ startsAt: activity.startsAt, status: activity.status })) {
+      return { error: new Error('This activity has already started, so joining is closed.') };
+    }
+
     const { error } = await joinOrRequestActivity(eventId, currentUserId, activity.approvalMode);
 
     if (error) {
@@ -332,6 +413,10 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
 
     if (!activity) {
       return { error: new Error('Activity not found.') };
+    }
+
+    if (!canJoinActivity({ startsAt: activity.startsAt, status: activity.status })) {
+      return { error: new Error('This activity has already started, so requests are closed.') };
     }
 
     const { error } = await joinOrRequestActivity(eventId, currentUserId, 'manual');
@@ -386,6 +471,7 @@ export function ActivityStoreProvider({ children }: { children: ReactNode }) {
       value={{
         currentUserId,
         currentUserParticipant,
+        currentTime,
         browseEvents,
         createdActivities,
         participationByEventId,
@@ -515,7 +601,7 @@ export function canAccessActivityChat(participationStatus: ParticipationStatus) 
 }
 
 export function isActivityPast(dateTimeIso: string) {
-  return new Date(dateTimeIso).getTime() < Date.now();
+  return isPastActivity({ startsAt: dateTimeIso });
 }
 
 export function isActivityEnded(
@@ -549,6 +635,7 @@ function mapActivityRecordToManagedActivity(activity: ActivityRecord): Activity 
   return {
     id: activity.id,
     hostId: activity.hostId,
+    status: activity.status,
     type: activity.category,
     title: activity.title,
     date: activity.startsAt,
@@ -595,6 +682,7 @@ function mapActivityRecordToEventItem(activity: ActivityRecord): EventItem {
     hostInitials: activity.host.initials,
     hostBio: activity.host.bio,
     hostPhotoUrl: activity.host.avatarUrl,
+    status: activity.status,
     participantCount: activity.approvedParticipants.length,
     participantLimit: activity.participantLimit,
     participants: activity.approvedParticipants.map((participant) => ({

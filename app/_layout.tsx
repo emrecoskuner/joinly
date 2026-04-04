@@ -11,6 +11,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ProfileStoreProvider, useProfileStore } from '@/store/profile-store';
 import { ActivityStoreProvider } from '@/store/activity-store';
 import { MapStoreProvider } from '@/store/map-store';
+import { RatingPromptProvider } from '@/store/rating-prompt-store';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -36,14 +37,14 @@ export default function RootLayout() {
 }
 
 function ProtectedNavigator() {
-  const { loading, session } = useAuth();
-  const { loading: profileLoading, isProfileComplete } = useProfileStore();
+  const { loading, user } = useAuth();
+  const { loading: profileLoading, isProfileComplete, profile } = useProfileStore();
   const segments = useSegments();
   const firstSegment = segments[0];
   const isAuthRoute = firstSegment === 'sign-in' || firstSegment === 'sign-up';
   const isCompleteProfileRoute = firstSegment === 'complete-profile';
 
-  if (loading || (session && profileLoading)) {
+  if (loading || (user && profileLoading)) {
     return (
       <View style={styles.loadingScreen}>
         <ActivityIndicator color="#5B4630" size="large" />
@@ -52,7 +53,7 @@ function ProtectedNavigator() {
     );
   }
 
-  if (!session) {
+  if (!user) {
     if (!isAuthRoute) {
       return <Redirect href="/sign-in" />;
     }
@@ -65,7 +66,7 @@ function ProtectedNavigator() {
     );
   }
 
-  if (!isProfileComplete) {
+  if (!profile || !isProfileComplete) {
     if (!isCompleteProfileRoute) {
       return <Redirect href="/complete-profile" />;
     }
@@ -82,20 +83,22 @@ function ProtectedNavigator() {
   }
 
   return (
-    <Stack screenOptions={secondaryStackScreenOptions}>
-      <Stack.Screen name="complete-profile" options={{ headerShown: false }} />
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="create" options={{ presentation: 'card' }} />
-      <Stack.Screen name="activity/[id]" options={{ presentation: 'card' }} />
-      <Stack.Screen name="event/[id]" options={{ presentation: 'card' }} />
-      <Stack.Screen name="chat/[id]" options={{ presentation: 'card' }} />
-      <Stack.Screen name="user/[id]" options={{ presentation: 'card' }} />
-      <Stack.Screen name="profile/edit" options={{ presentation: 'card' }} />
-      <Stack.Screen name="profile/edit-about" options={{ presentation: 'card' }} />
-      <Stack.Screen name="profile/edit-interests" options={{ presentation: 'card' }} />
-      <Stack.Screen name="profile/activities/[kind]" options={{ presentation: 'card' }} />
-      <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-    </Stack>
+    <RatingPromptProvider>
+      <Stack screenOptions={secondaryStackScreenOptions}>
+        <Stack.Screen name="complete-profile" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="create" options={{ presentation: 'card' }} />
+        <Stack.Screen name="activity/[id]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="event/[id]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="chat/[id]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="user/[id]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="profile/edit" options={{ presentation: 'card' }} />
+        <Stack.Screen name="profile/edit-about" options={{ presentation: 'card' }} />
+        <Stack.Screen name="profile/edit-interests" options={{ presentation: 'card' }} />
+        <Stack.Screen name="profile/activities/[kind]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+      </Stack>
+    </RatingPromptProvider>
   );
 }
 
